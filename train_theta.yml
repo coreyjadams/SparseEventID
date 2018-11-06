@@ -1,0 +1,39 @@
+# network parameters
+
+NETWORK:
+  N_INITIAL_FILTERS:              8
+  RES_BLOCKS_PER_LAYER:           3
+  RES_BLOCKS_DEEPEST_LAYER:       4
+  RES_BLOCKS_FINAL:               1
+  NETWORK_DEPTH:                  6
+  NPLANES:                        3
+  SHARE_WEIGHTS:              False
+  BATCH_NORM:                 False
+  REGULARIZE:                 0.001
+  USE_BIAS:                   False
+  SUMMED_CONNECTIONS:          True
+  CONNECT_PRE_RES_BLOCKS_DOWN: True 
+  CONNECT_PRE_RES_BLOCKS_UP:   True
+
+MODE: "GPU"
+DATA_FORMAT:     "channels_last"
+TRAINING:            True
+MINIBATCH_SIZE:         1
+SAVE_ITERATION:       100
+SUMMARY_ITERATION:     10
+PROFILE_ITERATION:    100
+LOGGING_ITERATION:     10
+BASE_LEARNING_RATE: 0.001
+ITERATIONS:           500
+#LOGDIR:  '/Users/corey.adams/DeepLearnPhysics/CosmicTagger/log/dev/'
+LOGDIR:  '/home/cadams/Cooley/DeepLearnPhysics/CosmicTagger/log/train/'
+
+
+# IO paramters: 
+IO:
+  TRAIN:
+    FILE:          './io/train_io.cfg'
+    FILLER:        'TrainIO'
+    VERBOSITY:      3
+    KEYWORD_DATA:  'main_data'
+    KEYWORD_LABEL: 'main_label'

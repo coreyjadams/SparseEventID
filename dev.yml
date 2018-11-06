@@ -1,0 +1,34 @@
+# network parameters
+
+NETWORK:
+  N_INITIAL_FILTERS:              2
+  BATCH_NORM:                  True
+  REGULARIZE:                 0.001
+  USE_BIAS:                    True
+  NUM_CLASSES:                    3
+
+
+TRANSFORMATION_LOSS:  0.0001
+
+MODE:                  "CPU"
+TRAINING:               True
+MINIBATCH_SIZE:            4
+SAVE_ITERATION:          100
+SUMMARY_ITERATION:        10
+PROFILE_ITERATION:       100
+LOGGING_ITERATION:         1
+BASE_LEARNING_RATE:    0.001
+ITERATIONS:              500
+
+LOGDIR:  '/Users/corey.adams/DeepLearnPhysics/PointNetEventID/log/2d/dev5/'
+# LOGDIR:  '/home/cadams/DeepLearnPhysics/CosmicTagger/log/dev/'
+
+
+# IO paramters: 
+IO:
+  TRAIN:
+    FILE:          './io/dev_io.cfg'
+    FILLER:        'DevIO'
+    VERBOSITY:      3
+    KEYWORD_DATA:  'dev_data'
+    KEYWORD_LABEL: 'dev_label'
