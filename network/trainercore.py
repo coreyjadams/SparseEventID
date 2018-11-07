@@ -11,7 +11,7 @@ tf.logging.set_verbosity(tf.logging.INFO)
 from .pointnet import pointnet
 from larcv import larcv_interface
 
-
+from .flags import FLAGS
 
 class trainercore(object):
     '''
@@ -20,77 +20,40 @@ class trainercore(object):
     a NotImplemented error.
 
     '''
-    def __init__(self, config):
-        self._config          = config
+    def __init__(self, f):
         self._larcv_interface = larcv_interface.larcv_interface()
         self._iteration       = 0
-        self._outputs         = None
 
-        self._core_training_params = [
-            'SAVE_ITERATION',
-            'LOGDIR',
-            'ITERATIONS',
-            'IO',
-            'NETWORK'
-        ]
+        print (FLAGS.COMPUTE_MODE)
 
+        self._initialize()
 
-        # Make sure that 'BASE_LEARNING_RATE' and 'TRAINING'
-        # are in net network parameters:
-
-
-
-
-        self._initialize(config)
-
-    def _initialize(self, config):
-
-        if 'MODE' not in config:
-            config['MODE'] == "GPU"
-
-        config['NETWORK']['TRAINING'] = self._config['TRAINING']
-        config['NETWORK']['MODE'] = self._config['MODE']
-
+    def _initialize(self):
 
         self._net = pointnet()
-        self._net.set_params(config['NETWORK'])
-
-    def check_params(self):
-        for param in self._core_training_params:
-            if param not in self._config:
-                raise Exception("Missing paragmeter "+ str(param))
-        return True
-
-
-    # def delete(self):
-    #     for key, manager in self._dataloaders.iteritems():
-    # #         manager.stop_manager()
 
 
     def _initialize_io(self):
 
         # Prepare data managers:
-        for mode in self._config['IO']:
+        mode = FLAGS.MODE
 
-            if mode not in ['TRAIN', 'TEST', 'ANA']:
-                raise Exception("Unknown mode {} requested, must be in ['TRAIN', 'TEST', 'ANA']".format(mode))
+        io_cfg = {
+            'filler_cfg'
+        }
 
+        io_config = {
+            'filler_name' : FLAGS.FILLER,
+            'filler_cfg'  : FLAGS.FILE,
+            'verbosity'   : FLAGS.VERBOSITY
+        }
+        data_keys = OrderedDict({
+            'image': FLAGS.KEYWORD_DATA, 
+            'label': FLAGS.KEYWORD_LABEL
+            })
 
-            io_cfg = {
-                'filler_cfg'
-            }
+        self._larcv_interface.prepare_manager(mode, io_config, FLAGS.MINIBATCH_SIZE, data_keys)
 
-            io_config = {
-                'filler_name' : self._config['IO'][mode]['FILLER'],
-                'filler_cfg'  : self._config['IO'][mode]['FILE'],
-                'verbosity'   : self._config['IO'][mode]['VERBOSITY']
-            }
-            data_keys = OrderedDict({
-                'image': self._config['IO'][mode]['KEYWORD_DATA'], 
-                'label': self._config['IO'][mode]['KEYWORD_LABEL']
-                })
-
-            self._larcv_interface.prepare_manager(mode, io_config, self._config['MINIBATCH_SIZE'], data_keys)
 
 
     def _construct_graph(self):
@@ -101,7 +64,7 @@ class trainercore(object):
 
         # Make sure all required dimensions are present:
 
-        dims = self._larcv_interface.fetch_minibatch_dims('TRAIN')
+        dims = self._larcv_interface.fetch_minibatch_dims('train')
 
         # Call the function to define the inputs
         self._input   = self._initialize_input(dims)
@@ -135,10 +98,10 @@ class trainercore(object):
         self._construct_graph()
 
         # Create an optimizer:
-        if self._config['BASE_LEARNING_RATE'] <= 0:
+        if FLAGS.LEARNING_RATE <= 0:
             opt = tf.train.AdamOptimizer()
         else:
-            opt = tf.train.AdamOptimizer(self._config['BASE_LEARNING_RATE'])
+            opt = tf.train.AdamOptimizer(FLAGS.LEARNING_RATE)
 
         self._global_step = tf.train.get_or_create_global_step()
         self._train_op = opt.minimize(self._loss, self._global_step)
@@ -148,10 +111,10 @@ class trainercore(object):
 
         config = tf.ConfigProto()
 
-        if self._config['MODE'] == "CPU":
+        if FLAGS.MODE == "CPU":
             config.inter_op_parallelism_threads = 2
             config.intra_op_parallelism_threads = 128
-        if self._config['MODE'] == "GPU":
+        if FLAGS.MODE == "GPU":
             config.gpu_options.allow_growth = True
 
         # self._sess = tf.train.MonitoredTrainingSession(config=config)
@@ -167,22 +130,22 @@ class trainercore(object):
 
         # Create a hook to manage the checkpoint saving:
         save_checkpoint_hook = tf.train.CheckpointSaverHook(
-            checkpoint_dir = self._config["LOGDIR"],
-            save_steps=self._config["SAVE_ITERATION"]
+            checkpoint_dir = FLAGS.LOGDIR,
+            save_steps=FLAGS.SAVE_ITERATION
             )
 
         # Create a hook to manage the summary saving:
         summary_saver_hook = tf.train.SummarySaverHook(
-            save_steps = self._config['SUMMARY_ITERATION'],
-            output_dir = self._config['LOGDIR'],
+            save_steps = FLAGS.SUMMARY_ITERATION,
+            output_dir = FLAGS.LOGDIR,
             summary_op = tf.summary.merge_all()
             )
 
 
         # Create a profiling hook for tracing:
         profile_hook = tf.train.ProfilerHook(
-            save_steps    = self._config['PROFILE_ITERATION'],
-            output_dir    = self._config['LOGDIR'],
+            save_steps    = FLAGS.PROFILE_ITERATION,
+            output_dir    = FLAGS.LOGDIR,
             show_dataflow = True,
             show_memory   = True
         )
@@ -191,7 +154,7 @@ class trainercore(object):
             tensors       = { 'global_step' : self._global_step,
                               'accuracy'    : self._accuracy,
                               'loss'        : self._loss},
-            every_n_iter  = self._config['LOGGING_ITERATION'],
+            every_n_iter  = FLAGS.LOGGING_ITERATION,
             )
 
         hooks = [
@@ -221,7 +184,7 @@ class trainercore(object):
 
         inputs = dict()
 
-        batch_size = self._config['MINIBATCH_SIZE']
+        batch_size = FLAGS.MINIBATCH_SIZE
 
         inputs.update({
             'image' : tf.placeholder(tf.float32, [batch_size, None, 3]),
@@ -318,7 +281,7 @@ class trainercore(object):
             tf.summary.scalar("Classification_Loss",loss)
 
             # If desired, add weight regularization loss:
-            if 'REGULARIZE' in self._config['NETWORK']:
+            if FLAGS.REGULARIZE_WEIGHTS != 0.0:
                 reg_loss = tf.reduce_mean(tf.losses.get_regularization_losses())
                 tf.summary.scalar("Weight_Regularization", reg_loss)
                 loss += reg_loss
@@ -327,10 +290,10 @@ class trainercore(object):
             t_loss = None
             for transformation in transformations:
                 mat_dim = transformation.get_shape().as_list()[-1]
-                difference_to_identity = tf.eye(mat_dim, batch_shape = [self._config['MINIBATCH_SIZE']]) 
+                difference_to_identity = tf.eye(mat_dim, batch_shape = [FLAGS.MINIBATCH_SIZE]) 
                 difference_to_identity -= tf.matmul(transformation, tf.matrix_transpose(transformation))
                 this_t_loss = tf.reduce_mean(tf.nn.l2_normalize(difference_to_identity))
-                this_t_loss = self._config['TRANSFORMATION_LOSS']*this_t_loss
+                this_t_loss = FLAGS.TRANSFORMATION_LOSS*this_t_loss
                 if t_loss is None:
                     t_loss = this_t_loss
                 else:
@@ -428,8 +391,9 @@ class trainercore(object):
     def train_step(self):
 
 
-        minibatch_data = self._larcv_interface.fetch_minibatch_data('TRAIN')
-        minibatch_dims = self._larcv_interface.fetch_minibatch_dims('TRAIN')
+
+        minibatch_data = self._larcv_interface.fetch_minibatch_data('train')
+        minibatch_dims = self._larcv_interface.fetch_minibatch_dims('train')
 
 
         for key in minibatch_data:
@@ -448,8 +412,8 @@ class trainercore(object):
     def batch_process(self):
 
         # Run iterations
-        for i in range(self._config['ITERATIONS']):
-            if self._config['TRAINING'] and self._iteration >= self._config['ITERATIONS']:
+        for i in range(FLAGS.ITERATIONS):
+            if FLAGS.TRAINING and self._iteration >= FLAGS.ITERATIONS:
                 print('Finished training (iteration %d)' % self._iteration)
                 break
 

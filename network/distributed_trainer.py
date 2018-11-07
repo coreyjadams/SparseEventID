@@ -108,6 +108,13 @@ class distributed_trainer(trainercore):
 
         hooks = self.get_distributed_hooks()
 
+        if self._config['MODE'] == "CPU":
+            config.inter_op_parallelism_threads = 2
+            config.intra_op_parallelism_threads = 128
+        if self._config['MODE'] == "GPU":
+            config.gpu_options.allow_growth = True
+            config.gpu_options.visible_device_list = str(hvd.local_rank())
+
 
         config = tf.ConfigProto()
         config.inter_op_parallelism_threads = self._config['INTER_OP_PARALLELISM_THREADS']

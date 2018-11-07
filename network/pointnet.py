@@ -2,12 +2,12 @@ import sys
 
 import tensorflow as tf
 
-from .networkcore import networkcore
-
 from .utils import transform_net, mlp
 
+from .flags import FLAGS
+
 # Main class
-class pointnet(networkcore):
+class pointnet(object):
     '''Define a network model and run training
 
     resnet implementation
@@ -24,33 +24,10 @@ class pointnet(networkcore):
             ConfigurationException -- Missing a required parameter
         '''
 
-        # Call the base class to initialize _core_network_params:
-        networkcore.__init__(self)
-
-        # Extend the parameters to include the needed ones:
-
-        self._core_network_params += [
-            'N_INITIAL_FILTERS',
-            'NUM_CLASSES',
-            # 'NPLANES',
-        ]
         return
 
 
-    def _apply_default_params(self):
-        '''
-            Apply default parameters for this network, if they aren't specified
-        '''
-
-        if 'USE_BIAS' not in self._params:
-            self._params['USE_BIAS'] = False
-        if 'REGULARIZE' not in self._params:
-            self._params['REGULARIZE'] = 0.0
-        if 'BATCH_NORM' not in self._params:
-            self._params['BATCH_NORM'] = False
-
-
-    def _build_network(self, inputs, verbosity=2):
+    def _build_network(self, inputs):
 
         ''' verbosity 0 = no printouts
             verbosity 1 = sparse information
@@ -66,12 +43,12 @@ class pointnet(networkcore):
 
         with tf.variable_scope("input_transformation"):
             input_transformation = transform_net(x, 
-                                                 self._params['TRAINING'],
+                                                 FLAGS.TRAINING,
                                                  name       = "input_transformation",
                                                  # mlp_layers = [64, 256, 1024],
-                                                 use_bias   = self._params['USE_BIAS'],
-                                                 batch_norm = self._params['BATCH_NORM'],
-                                                 regularize = self._params['REGULARIZE'],)
+                                                 use_bias   = FLAGS.USE_BIAS,
+                                                 batch_norm = FLAGS.BATCH_NORM,
+                                                 regularize = FLAGS.REGULARIZE_WEIGHTS,)
 
             # Do a matrix multiplication to transform the point:
 
@@ -90,19 +67,19 @@ class pointnet(networkcore):
 
             x = mlp(x,
                     mlp_layers = [64,64],
-                    is_training= self._params['TRAINING'], 
+                    is_training= FLAGS.TRAINING, 
                     name       = "mlp",
-                    use_bias   = self._params['USE_BIAS'],
-                    batch_norm = self._params['BATCH_NORM'],
-                    regularize = self._params['REGULARIZE'],)
+                    use_bias   = FLAGS.USE_BIAS,
+                    batch_norm = FLAGS.BATCH_NORM,
+                    regularize = FLAGS.REGULARIZE_WEIGHTS,)
 
         with tf.variable_scope("feature_transformation"):
-            feature_transformation = transform_net(x, self._params['TRAINING'],
+            feature_transformation = transform_net(x, FLAGS.TRAINING,
                                                    name       = "input_transformation",
                                                    # mlp_layers = [64, 256, 1024],
-                                                   use_bias   = self._params['USE_BIAS'],
-                                                   batch_norm = self._params['BATCH_NORM'],
-                                                   regularize = self._params['REGULARIZE'],)
+                                                   use_bias   = FLAGS.USE_BIAS,
+                                                   batch_norm = FLAGS.BATCH_NORM,
+                                                   regularize = FLAGS.REGULARIZE_WEIGHTS,)
             # Apply the feature transformation:
             x = tf.matmul(x, feature_transformation)
 
@@ -111,11 +88,11 @@ class pointnet(networkcore):
 
             x = mlp(x,
                     mlp_layers = [64,128, 1024],
-                    is_training= self._params['TRAINING'], 
+                    is_training= FLAGS.TRAINING, 
                     name       = "mlp",
-                    use_bias   = self._params['USE_BIAS'],
-                    batch_norm = self._params['BATCH_NORM'],
-                    regularize = self._params['REGULARIZE'],)
+                    use_bias   = FLAGS.USE_BIAS,
+                    batch_norm = FLAGS.BATCH_NORM,
+                    regularize = FLAGS.REGULARIZE_WEIGHTS,)
 
         # Now, apply the symmetric function (reduce_max) to map to (B, 1024) global features:
         x = tf.reduce_max(
@@ -126,9 +103,9 @@ class pointnet(networkcore):
 
 
         with tf.variable_scope("classification_mlp"):
-            for n_hidden in [512, 256, self._params['NUM_CLASSES']]:
+            for n_hidden in [512, 256, FLAGS.NUM_CLASSES]:
 
-                if self._params['BATCH_NORM']:
+                if FLAGS.BATCH_NORM:
                     with tf.variable_scope("batch_norm_{}".format(n_hidden)) as scope:
                         # updates_collections=None is important here
                         # it forces batchnorm parameters to be saved immediately,
@@ -136,20 +113,20 @@ class pointnet(networkcore):
                         x = tf.contrib.layers.batch_norm(x,
                                                          updates_collections=None,
                                                          decay=0.9,
-                                                         is_training=self._params['TRAINING'],
-                                                         trainable=self._params['TRAINING'],
+                                                         is_training=FLAGS.TRAINING,
+                                                         trainable=FLAGS.TRAINING,
                                                          scope=scope)
 
                 x = tf.layers.dense(x, n_hidden, 
                                     activation=None,
-                                    use_bias=self._params['USE_BIAS'],
-                                    kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=self._params['REGULARIZE']),
-                                    trainable=self._params['TRAINING'],
+                                    use_bias=FLAGS.USE_BIAS,
+                                    kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=FLAGS.REGULARIZE_WEIGHTS),
+                                    trainable=FLAGS.TRAINING,
                                     name="dense_{}".format(n_hidden),
                                     reuse=None)
 
                 # Skip the relu on the final layer:
-                if n_hidden != self._params['NUM_CLASSES']:
+                if n_hidden != FLAGS.NUM_CLASSES:
                     x = tf.nn.relu(x)
 
         # To compute the loss, we return not just the logits but also the transormation matrices:
