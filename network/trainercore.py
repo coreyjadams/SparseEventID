@@ -20,7 +20,7 @@ class trainercore(object):
     a NotImplemented error.
 
     '''
-    def __init__(self, f):
+    def __init__(self,):
         self._larcv_interface = larcv_interface.larcv_interface()
         self._iteration       = 0
 
@@ -72,6 +72,10 @@ class trainercore(object):
         # Call the function to define the output
         self._logits, self._transformations  = self._net._build_network(self._input)
 
+        n_trainable_parameters = 0
+        for var in tf.trainable_variables():
+            n_trainable_parameters += numpy.prod(var.get_shape())
+        print("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
 
         # Apply a softmax and argmax:
         self._outputs = self._create_softmax(self._logits)
@@ -87,13 +91,16 @@ class trainercore(object):
         sys.stdout.write("Done constructing network. ({0:.2}s)\n".format(end-start))
 
 
-    def initialize(self):
+    def initialize(self, io_only=False):
 
         # Verify the network object is set:
         if not hasattr(self, '_net'):
             raise Exception("Must set network object by calling set_network_object() before initialize")
 
         self._initialize_io()
+
+        if io_only:
+            return
 
         self._construct_graph()
 
@@ -387,13 +394,10 @@ class trainercore(object):
         return output
 
 
+    def fetch_next_batch(self):
 
-    def train_step(self):
-
-
-
-        minibatch_data = self._larcv_interface.fetch_minibatch_data('train')
-        minibatch_dims = self._larcv_interface.fetch_minibatch_dims('train')
+        minibatch_data = self._larcv_interface.fetch_minibatch_data(FLAGS.MODE)
+        minibatch_dims = self._larcv_interface.fetch_minibatch_dims(FLAGS.MODE)
 
 
         for key in minibatch_data:
@@ -403,7 +407,12 @@ class trainercore(object):
         minibatch_data['image'] = numpy.squeeze(minibatch_data['image'])
         minibatch_data['image'] = self.image_to_point_cloud(minibatch_data['image'])
 
+        return minibatch_data
 
+    def train_step(self):
+
+
+        minibatch_data = self.fetch_next_batch()
 
         self._sess.run(self._train_op, 
                        feed_dict = self.feed_dict(inputs = minibatch_data))

@@ -67,11 +67,7 @@ class FLAGS:
         parser.add_argument('-mb','--minibatch-size',type=int, default=cls.NUM_CLASSES,
             help="Number of images in the minibatch size [default: {}]".format(cls.NUM_CLASSES))
 
-        parser.add_argument('-i','--iterations', type=int, default=cls.ITERATIONS,
-            help="Number of iterations to process [default: {}]".format(cls.ITERATIONS))
 
-        parser.add_argument('-d','--distributed', type=int, default=cls.DISTRIBUTED,
-            help="Run with the MPI compatible mode [default: {}]".format(cls.DISTRIBUTED))
 
 
         return parser
@@ -90,7 +86,11 @@ class FLAGS:
             help="Keyword for io data access [default: {}]".format(cls.KEYWORD_DATA))
         parser.add_argument('--keyword-label', type=str, default=cls.KEYWORD_LABEL,
             help="Keyword for io label access [default: {}]".format(cls.KEYWORD_LABEL))
+        parser.add_argument('-i','--iterations', type=int, default=cls.ITERATIONS,
+            help="Number of iterations to process [default: {}]".format(cls.ITERATIONS))
 
+        parser.add_argument('-d','--distributed', type=bool, default=cls.DISTRIBUTED,
+            help="Run with the MPI compatible mode [default: {}]".format(cls.DISTRIBUTED))
         return parser
 
     @classmethod
@@ -129,7 +129,6 @@ class FLAGS:
         # # IO test parser
         cls.iotest_parser = subparsers.add_parser("iotest", help="Test io only (no network)")
         cls.iotest_parser = cls._add_default_io_configuration(cls.iotest_parser)
-
 
         # attach common parsers
         cls.train_parser     = cls._add_default_network_configuration(train_parser)

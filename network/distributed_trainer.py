@@ -12,7 +12,8 @@ hvd.init()
 
 from larcv.distributed_larcv_interface import larcv_interface
 
-from .uresnet import uresnet
+from . flags import FLAGS
+
 from .trainercore import trainercore
 
 
@@ -23,64 +24,27 @@ class distributed_trainer(trainercore):
     a NotImplemented error.
 
     '''
-    def __init__(self, config):
+    def __init__(self):
         # Rely on the base class for most standard parameters, only
         # search for parameters relevant for distributed computing here
 
         # Put the IO rank as the last rank in the COMM, since rank 0 does tf saves
         root_rank = hvd.size() - 1 
 
-        self._config          = config
         self._larcv_interface = larcv_interface(root=root_rank)
         self._iteration       = 0
-        self._outputs         = None
-
-        self._core_training_params = [
-            'SAVE_ITERATION',
-            'LOGDIR',
-            'ITERATIONS',
-            'IO',
-            'NETWORK',
-            'INTER_OP_PARALLELISM_THREADS',
-            'INTRA_OP_PARALLELISM_THREADS',
-        ]
+        self._rank            = hvd.rank()
 
 
         # Make sure that 'BASE_LEARNING_RATE' and 'TRAINING'
         # are in net network parameters:
 
-        self._initialize(config)
+        self._initialize()
 
 
 
-    def _initialize_io(self):
 
-        # Prepare data managers:
-        for mode in self._config['IO']:
-
-            if mode not in ['TRAIN', 'TEST', 'ANA']:
-                raise Exception("Unknown mode {} requested, must be in ['TRAIN', 'TEST', 'ANA']".format(mode))
-
-
-            io_cfg = {
-                'filler_cfg'
-            }
-
-            io_config = {
-                'filler_name' : self._config['IO'][mode]['FILLER'],
-                'filler_cfg'  : self._config['IO'][mode]['FILE'],
-                'verbosity'   : self._config['IO'][mode]['VERBOSITY']
-            }
-            data_keys = OrderedDict({
-                'image': self._config['IO'][mode]['KEYWORD_DATA'], 
-                'label': self._config['IO'][mode]['KEYWORD_LABEL']
-                })
-
-            self._larcv_interface.prepare_manager(mode, io_config, self._config['MINIBATCH_SIZE'], data_keys)
-
-
-
-    def initialize(self):
+    def initialize(self, io_only = False):
 
         tf.logging.info("HVD rank: {}".format(hvd.rank()))
 
@@ -92,13 +56,16 @@ class distributed_trainer(trainercore):
 
         self._initialize_io()
 
+        if io_only:
+            return
+
         self._construct_graph()
 
         # Create an optimizer:
-        if self._config['BASE_LEARNING_RATE'] <= 0:
+        if FLAGS.BASE_LEARNING_RATE <= 0:
             opt = tf.train.AdagradOptimizer()
         else:
-            opt = tf.train.AdagradOptimizer(self._config['BASE_LEARNING_RATE']*hvd.size())
+            opt = tf.train.AdagradOptimizer(FLAGS.BASE_LEARNING_RATE*hvd.size())
 
         with tf.variable_scope("hvd"):
             opt = hvd.DistributedOptimizer(opt)
@@ -108,17 +75,17 @@ class distributed_trainer(trainercore):
 
         hooks = self.get_distributed_hooks()
 
-        if self._config['MODE'] == "CPU":
+        if FLAGS.MODE == "CPU":
             config.inter_op_parallelism_threads = 2
             config.intra_op_parallelism_threads = 128
-        if self._config['MODE'] == "GPU":
+        if FLAGS.MODE == "GPU":
             config.gpu_options.allow_growth = True
             config.gpu_options.visible_device_list = str(hvd.local_rank())
 
 
         config = tf.ConfigProto()
-        config.inter_op_parallelism_threads = self._config['INTER_OP_PARALLELISM_THREADS']
-        config.intra_op_parallelism_threads = self._config['INTRA_OP_PARALLELISM_THREADS']
+        config.inter_op_parallelism_threads = FLAGS.INTER_OP_PARALLELISM_THREADS
+        config.intra_op_parallelism_threads = FLAGS.INTRA_OP_PARALLELISM_THREADS
 
         self._sess = tf.train.MonitoredTrainingSession(config=config, hooks = hooks)
 
@@ -126,7 +93,7 @@ class distributed_trainer(trainercore):
 
         if hvd.rank() == 0:
 
-            checkpoint_dir = self._config['LOGDIR']
+            checkpoint_dir = FLAGS.LOGDIR
 
             loss_is_nan_hook = tf.train.NanTensorHook(
                 self._loss,
@@ -136,12 +103,12 @@ class distributed_trainer(trainercore):
             # Create a hook to manage the checkpoint saving:
             save_checkpoint_hook = tf.train.CheckpointSaverHook( 
                 checkpoint_dir = checkpoint_dir,
-                save_steps=self._config["SAVE_ITERATION"]
+                save_steps=FLAGS.SAVE_ITERATION
                 )
 
             # Create a hook to manage the summary saving:
             summary_saver_hook = tf.train.SummarySaverHook(
-                save_steps = self._config['SUMMARY_ITERATION'],
+                save_steps = FLAGS.SUMMARY_ITERATION,
                 output_dir = checkpoint_dir,
                 summary_op = tf.summary.merge_all()
                 )
@@ -149,7 +116,7 @@ class distributed_trainer(trainercore):
             
             # Create a profiling hook for tracing:
             profile_hook = tf.train.ProfilerHook(
-                save_steps    = self._config['PROFILE_ITERATION'],
+                save_steps    = FLAGS.PROFILE_ITERATION,
                 output_dir    = checkpoint_dir,
                 show_dataflow = True,
                 show_memory   = True
@@ -159,7 +126,7 @@ class distributed_trainer(trainercore):
                 tensors       = { 'global_step' : self._global_step,
                                   'accuracy'    : self._accuracy, 
                                   'loss'        : self._loss},
-                every_n_iter  = self._config['LOGGING_ITERATION'],
+                every_n_iter  = FLAGS.LOGGING_ITERATION,
                 )
 
             hooks = [
