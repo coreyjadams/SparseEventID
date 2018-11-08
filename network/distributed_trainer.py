@@ -78,10 +78,10 @@ class distributed_trainer(trainercore):
 
         config = tf.ConfigProto()
 
-        if FLAGS.MODE == "CPU":
+        if FLAGS.COMPUTE_MODE == "CPU":
             config.inter_op_parallelism_threads = 2
             config.intra_op_parallelism_threads = 128
-        if FLAGS.MODE == "GPU":
+        if FLAGS.COMPUTE_MODE == "GPU":
             config.gpu_options.allow_growth = True
             config.gpu_options.visible_device_list = str(hvd.local_rank())
             print ("Global rank {}, Local horovod rank: {}".format(hvd.rank(), hvd.local_rank()))
