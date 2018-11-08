@@ -84,7 +84,8 @@ class distributed_trainer(trainercore):
         if FLAGS.MODE == "GPU":
             config.gpu_options.allow_growth = True
             config.gpu_options.visible_device_list = str(hvd.local_rank())
-
+            print ("Global rank {}, Local horovod rank: {}".format(hvd.rank(), hvd.local_rank()))
+            os.env['CUDA_VISIBLE_DEVICES'] = hvd.local_rank()
 
         if hvd.rank() == 0:
             self._sess = tf.train.MonitoredTrainingSession(config=config, hooks = hooks,
