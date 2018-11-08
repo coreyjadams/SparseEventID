@@ -84,6 +84,7 @@ class distributed_trainer(trainercore):
         if FLAGS.COMPUTE_MODE == "GPU":
             config.gpu_options.allow_growth = True
             config.gpu_options.visible_device_list = str(hvd.local_rank())
+
             tf.logging.info("Global rank {}, Local horovod rank: {}".format(hvd.rank(), hvd.local_rank()))
 
         if hvd.rank() == 0:

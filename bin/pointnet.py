@@ -13,7 +13,7 @@ from network.flags import FLAGS
 
 def main():
     FLAGS.parse_args()
-    # FLAGS.dump_config()
+    FLAGS.dump_config()
 
     if FLAGS.MODE is None:
         raise Exception()
@@ -44,4 +44,4 @@ def main():
                     print("Time to fetch a minibatch of data: {}".format(end - start))
 
 if __name__ == '__main__':
-  main()
+    main()
