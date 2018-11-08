@@ -44,8 +44,8 @@ class FLAGS:
     FILE                = '{}/io/dev_io.cfg'.format(top_dir)
     FILLER              = 'DevIO'
     IO_VERBOSITY        = 3
-    KEYWORD_DATA        = 'dev_data'
-    KEYWORD_LABEL       = 'dev_label'
+    KEYWORD_DATA        = 'data'
+    KEYWORD_LABEL       = 'label'
 
 
     @classmethod
