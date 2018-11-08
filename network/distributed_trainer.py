@@ -74,6 +74,9 @@ class distributed_trainer(trainercore):
             self._train_op = opt.minimize(self._loss, self._global_step)
 
         hooks = self.get_distributed_hooks()
+        
+
+        config = tf.ConfigProto()
 
         if FLAGS.MODE == "CPU":
             config.inter_op_parallelism_threads = 2
@@ -82,10 +85,6 @@ class distributed_trainer(trainercore):
             config.gpu_options.allow_growth = True
             config.gpu_options.visible_device_list = str(hvd.local_rank())
 
-
-        config = tf.ConfigProto()
-        config.inter_op_parallelism_threads = FLAGS.INTER_OP_PARALLELISM_THREADS
-        config.intra_op_parallelism_threads = FLAGS.INTRA_OP_PARALLELISM_THREADS
 
         if hvd.rank() == 0:
             self._sess = tf.train.MonitoredTrainingSession(config=config, hooks = hooks,
