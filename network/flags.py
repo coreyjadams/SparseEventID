@@ -46,6 +46,9 @@ class FLAGS:
     KEYWORD_DATA          = 'data'
     KEYWORD_LABEL         = 'label'
 
+    # Relevant parameters for running on KNL:
+    INTER_OP_PARALLELISM_THREADS     = 2
+    INTRA_OP_PARALLELISM_THREADS     = 128
 
     @classmethod
     def _add_default_network_configuration(cls, parser):

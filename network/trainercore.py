@@ -188,7 +188,7 @@ class trainercore(object):
 
         inputs = dict()
 
-        batch_size = FLAGS.MINIBATCH_SIZE
+        batch_size = self._larcv_interface.fetch_minibatch_dims(FLAGS.MODE)['label'][0]
 
         inputs.update({
             'image' : tf.placeholder(tf.float32, [batch_size, None, 3]),
@@ -294,7 +294,8 @@ class trainercore(object):
             t_loss = None
             for transformation in transformations:
                 mat_dim = transformation.get_shape().as_list()[-1]
-                difference_to_identity = tf.eye(mat_dim, batch_shape = [FLAGS.MINIBATCH_SIZE]) 
+                batch_size = self._larcv_interface.fetch_minibatch_dims(FLAGS.MODE)['label'][0]
+                difference_to_identity = tf.eye(mat_dim, batch_shape = [batch_size]) 
                 difference_to_identity -= tf.matmul(transformation, tf.matrix_transpose(transformation))
                 this_t_loss = tf.reduce_mean(tf.nn.l2_normalize(difference_to_identity))
                 this_t_loss = FLAGS.REGULARIZE_TRANSFORMS*this_t_loss

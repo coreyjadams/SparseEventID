@@ -36,7 +36,7 @@ class distributed_trainer(trainercore):
         self._rank            = hvd.rank()
 
 
-        # Make sure that 'BASE_LEARNING_RATE' and 'TRAINING'
+        # Make sure that 'LEARNING_RATE' and 'TRAINING'
         # are in net network parameters:
 
         self._initialize()
@@ -62,10 +62,10 @@ class distributed_trainer(trainercore):
         self._construct_graph()
 
         # Create an optimizer:
-        if FLAGS.BASE_LEARNING_RATE <= 0:
+        if FLAGS.LEARNING_RATE <= 0:
             opt = tf.train.AdagradOptimizer()
         else:
-            opt = tf.train.AdagradOptimizer(FLAGS.BASE_LEARNING_RATE*hvd.size())
+            opt = tf.train.AdagradOptimizer(FLAGS.LEARNING_RATE*hvd.size())
 
         with tf.variable_scope("hvd"):
             opt = hvd.DistributedOptimizer(opt)
@@ -100,7 +100,7 @@ class distributed_trainer(trainercore):
 
         if hvd.rank() == 0:
 
-            checkpoint_dir = FLAGS.LOGDIR
+            checkpoint_dir = FLAGS.LOG_DIRECTORY
 
             loss_is_nan_hook = tf.train.NanTensorHook(
                 self._loss,
@@ -148,18 +148,12 @@ class distributed_trainer(trainercore):
     def train_step(self):
 
 
-        minibatch_data = self._larcv_interface.fetch_minibatch_data('TRAIN')
-        minibatch_dims = self._larcv_interface.fetch_minibatch_dims('TRAIN')
+        minibatch_data = self.fetch_next_batch()
 
-        # Reshape labels by dict entry, if needed, or all at once:
-        minibatch_data['label'] = numpy.reshape(minibatch_data['label'], minibatch_dims['label'])
-
-
-        # Compute weights for this minibatch:
-        minibatch_data['weight'] = self.compute_weights(minibatch_data['label'])
-
-        _, loss, logits = self._sess.run([self._train_op, self._loss, self._logits],
+        self._sess.run(self._train_op, 
                        feed_dict = self.feed_dict(inputs = minibatch_data))
+
+
 
 
         # tf.logging.info("Rank {} loss: {}".format(hvd.rank(), loss))
