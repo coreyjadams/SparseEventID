@@ -125,26 +125,24 @@ class trainercore(object):
             config.gpu_options.allow_growth = True
 
         # self._sess = tf.train.MonitoredTrainingSession(config=config)
-        self._sess = tf.train.MonitoredTrainingSession(config=config, hooks = hooks)
+        self._sess = tf.train.MonitoredTrainingSession(config=config, 
+            hooks = hooks,
+            checkpoint_dir= "{}/checkpoints/".format(FLAGS.LOG_DIRECTORY),
+            save_checkpoint_steps=FLAGS.CHECKPOINT_ITERATION)
 
 
     def get_standard_hooks(self):
 
+        print("LOG_DIRECTORY: ", FLAGS.LOG_DIRECTORY)
         loss_is_nan_hook = tf.train.NanTensorHook(
             self._loss,
             fail_on_nan_loss=True,
         )
 
-        # Create a hook to manage the checkpoint saving:
-        save_checkpoint_hook = tf.train.CheckpointSaverHook(
-            checkpoint_dir = FLAGS.LOGDIR,
-            save_steps=FLAGS.SAVE_ITERATION
-            )
-
         # Create a hook to manage the summary saving:
         summary_saver_hook = tf.train.SummarySaverHook(
             save_steps = FLAGS.SUMMARY_ITERATION,
-            output_dir = FLAGS.LOGDIR,
+            output_dir = FLAGS.LOG_DIRECTORY,
             summary_op = tf.summary.merge_all()
             )
 
@@ -152,7 +150,7 @@ class trainercore(object):
         # Create a profiling hook for tracing:
         profile_hook = tf.train.ProfilerHook(
             save_steps    = FLAGS.PROFILE_ITERATION,
-            output_dir    = FLAGS.LOGDIR,
+            output_dir    = FLAGS.LOG_DIRECTORY,
             show_dataflow = True,
             show_memory   = True
         )
@@ -166,7 +164,6 @@ class trainercore(object):
 
         hooks = [
             loss_is_nan_hook,
-            save_checkpoint_hook,
             summary_saver_hook,
             profile_hook,
             logging_hook,
@@ -300,7 +297,7 @@ class trainercore(object):
                 difference_to_identity = tf.eye(mat_dim, batch_shape = [FLAGS.MINIBATCH_SIZE]) 
                 difference_to_identity -= tf.matmul(transformation, tf.matrix_transpose(transformation))
                 this_t_loss = tf.reduce_mean(tf.nn.l2_normalize(difference_to_identity))
-                this_t_loss = FLAGS.TRANSFORMATION_LOSS*this_t_loss
+                this_t_loss = FLAGS.REGULARIZE_TRANSFORMS*this_t_loss
                 if t_loss is None:
                     t_loss = this_t_loss
                 else:
