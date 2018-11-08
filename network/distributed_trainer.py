@@ -87,7 +87,14 @@ class distributed_trainer(trainercore):
         config.inter_op_parallelism_threads = FLAGS.INTER_OP_PARALLELISM_THREADS
         config.intra_op_parallelism_threads = FLAGS.INTRA_OP_PARALLELISM_THREADS
 
-        self._sess = tf.train.MonitoredTrainingSession(config=config, hooks = hooks)
+        if hvd.rank() == 0:
+            self._sess = tf.train.MonitoredTrainingSession(config=config, hooks = hooks,
+                checkpoint_dir= "{}/checkpoints/".format(FLAGS.LOG_DIRECTORY),
+                save_checkpoint_steps=FLAGS.CHECKPOINT_ITERATION
+            )
+
+        else:
+            self._sess = tf.train.MonitoredTrainingSession(config=config, hooks = hooks)
 
     def get_distributed_hooks(self):
 
@@ -99,12 +106,6 @@ class distributed_trainer(trainercore):
                 self._loss,
                 fail_on_nan_loss=True,
             )
-
-            # Create a hook to manage the checkpoint saving:
-            save_checkpoint_hook = tf.train.CheckpointSaverHook( 
-                checkpoint_dir = checkpoint_dir,
-                save_steps=FLAGS.SAVE_ITERATION
-                )
 
             # Create a hook to manage the summary saving:
             summary_saver_hook = tf.train.SummarySaverHook(
@@ -132,7 +133,6 @@ class distributed_trainer(trainercore):
             hooks = [
                 hvd.BroadcastGlobalVariablesHook(0),
                 loss_is_nan_hook,
-                save_checkpoint_hook,
                 summary_saver_hook,
                 profile_hook,
                 logging_hook,
