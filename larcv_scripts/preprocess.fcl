@@ -1,0 +1,172 @@
+
+#  Here is a summary of what this file is doing.
+#
+#  Initial File Contents:
+#    - image2d_sbndwire_tree
+#    - particle_sbndseg_tree
+#    - cluster3d_sbndseg_tree
+#    - cluster2d_sbndseg_tree
+#    - cluster3d_sbndneutrino_tree
+#    - cluster2d_sbndneutrino_tree
+#    - particle_sbndneutrino_tree
+#
+#   Tensor3DFromCluster3D: Convert cluster3d objects into tensor3d objects (input to the 3D networks)
+#
+#   EventPIDLabel: Create whole-event labels for Madeline's classification
+#
+#   CropNeutrino2D: Crop to a 512x512 region around the neutrino vertex in each plane, in 2D
+#
+#   CropNeutrino3D: Crop to a 512x512x512 region around the neutrino vertex, in 3D
+#
+#   QSumFilter: Filter out nearly empty events by setting a threshold on charge summed in each plane
+#
+#   EmptyTensorFilter: Filter out nearly empty events in 3D by setting a threshold on the number of non-zero voxels
+#
+#   ParentParticleSeg: Merge clusters in 2D and 3D into just their parent particles
+#
+#   LeptonSegLabel: Label the pixels as primary lepton (1) or non-lepton (2) or background pixels (0) (creates image2d)
+#
+#   LeptonSegLabel3D: Label the pixels as primary lepton (1) or non-lepton (2) or background pixels (0) (creates voxel3d)
+#
+#   Tensor2DFromImage2D: Convert the image data (and label data) into tensors for point net style input
+#
+#  This file runs in randomizing order, so feed files in any pattern as the output will be randomized.
+#
+#
+#  What Gets Stored?
+#   The following data products are in the output file:
+#
+# "cluster2d" - "sbndneutrino"
+# "cluster2d" - "sbndsegmerged"
+# "image2d"   - "sbndwire"
+# "image2d"   - "sbndlepton"
+# "sparse2d"  - "sbndwire"
+# "sparse2d"  - "sbndlepton"
+# "cluster3d" - "sbndneutrino"
+# "cluster3d" - "sbndsegmerged"
+# "sparse3d"  - "sbndvoxels"
+# "sparse3d"  - "sbndlepton"
+# "particle"  - "neutID"
+# "particle"  - "protID"
+# "particle"  - "cpiID"
+# "particle"  - "npiID"
+# "particle"  - "sbndneutrino"
+# "particle"  - "sbdnsegmerged"
+# "particle"  - "all"
+
+
+
+ProcessDriver: {
+  Verbosity:       0
+  EnableFilter:    true
+  RandomAccess:    true
+  RandomSeed:      -1
+  ProcessType:     ["Cluster2DThreshold","Tensor3DFromCluster3D","EmptyTensorFilter","ParentParticleSeg","CropNeutrino2D","QSumFilter","CropNeutrino3D","EventPIDLabel","LeptonSegLabel","LeptonSegLabel3D","ThresholdTensor3D","Tensor2DFromImage2D","Tensor2DFromImage2D","MaskTensor3D"]
+  ProcessName:     ["Cluster2DThreshold","Tensor3DFromCluster3D","EmptyTensorFilter","ParentParticleSeg","CropNeutrino2D","QSumFilter","CropNeutrino3D","EventPIDLabel","LeptonSegLabel","LeptonSegLabel3D","ThresholdTensor3D","LabelTensor2DFromImage2D","ImageTensor2DFromImage2D","MaskTensor3D"]
+  StartEntry: 0
+  #NumEntries: 50
+
+
+
+  IOManager: {
+    Verbosity:   2
+    Name:        "IOManager"
+    IOMode:      2
+    OutFileName: "out.root"
+    InputFiles:  []
+    InputDirs:   []
+
+    # Everything in one file:
+    StoreOnlyType: ["cluster2d","cluster2d","image2d","image2d","sparse2d","sparse2d","cluster3d","cluster3d","sparse3d","sparse3d","particle","particle","particle","particle","particle","particle","particle"]
+    StoreOnlyName: ["sbndneutrino","sbndsegmerged","sbndwire","sbndlepton","sbndwire","sbndlepton","sbndneutrino","sbndsegmerged","sbndvoxels","sbndlepton","neutID","protID","cpiID","npiID","sbndneutrino","sbdnsegmerged","all"]
+
+
+  }
+
+  ProcessList: {
+    Cluster2DThreshold: {
+      Cluster2DProducer: "sbndseg"
+      OutputProducer:    "sbndseg"
+      Threshold:         0.05
+    }
+    ThresholdTensor3D: {
+      Cluster2DProducer: ["sbndvoxels", "sbndlepton"]
+      OutputProducer:    ["sbndvoxels", "sbndlepton"]
+      Threshold:         0.5
+    }
+    Tensor3DFromCluster3D: {
+      Cluster3DProducer:   "sbndseg"
+      OutputProducer:      "sbndvoxels"
+    }
+    ParentParticleSeg: {
+      Cluster2dProducer:  "sbndseg"
+      Cluster3dProducer:  "sbndseg"
+      OutputProducer:     "sbndsegmerged"
+      ParticleProducer:   "sbndseg"
+    }
+    CropNeutrino2D: {
+      VertexProducer:  "sbndneutrino"
+      Producers:       ["sbndwire","sbndsegmerged","sbndneutrino"]
+      ProductTypes:    ["image2d","cluster2d","cluster2d"]
+      OutputProducers: ["sbndwire","sbndsegmerged","sbndneutrino"]
+      OutputRows:      512
+      OutputCols:      512
+    }
+    CropNeutrino3D: {
+      VertexProducer:  "sbndneutrino"
+      Producers:       ["sbndvoxels","sbndsegmerged","sbndneutrino"]
+      ProductTypes:    ["sparse3d","cluster3d","cluster3d"]
+      OutputProducers: ["sbndvoxels","sbndsegmerged","sbndneutrino"]
+      OutputNX: 512
+      OutputNY: 512
+      OutputNZ: 512
+    }
+    LeptonSegLabel: {
+      Cluster2dProducer:  "sbndsegmerged"
+      OutputProducer:     "sbndlepton"
+      ParticleProducer:   "sbndsegmerged"
+    }
+    EventPIDLabel: {
+      OutputProducer:       "pid"
+      ParticleProducer:     "sbndseg"
+      NeutrinoProducer:     "sbndneutrino"
+      ProtonThreshold:      0.020
+      ChargedPionThreshold: 0.010
+      NeutralPionThreshold: 0.000
+    }
+    QSumFilter: {
+      ImageProducer: "sbndwire"
+      MinQSum:       [100, 100, 100]
+      MinPixel:      [20 , 20 , 20 ]
+      MinADC:        [20 , 20 , 20 ]
+    }
+    EmptyTensorFilter: {
+      Tensor3DProducer: "sbndvoxels"
+      MinVoxel3DCount: 50
+    }
+    LeptonSegLabel3D: {
+      Cluster3dProducer:  "sbndsegmerged"
+      OutputProducer:     "sbndlepton"
+      ParticleProducer:   "sbndsegmerged"
+    }
+    LabelTensor2DFromImage2D: {
+      ImageProducer: "sbndlepton"
+      OutputProducer: "sbndlepton"
+      ProjectionIDs: [0,1,2]
+      Thresholds: [0,0,0]
+    }
+    ImageTensor2DFromImage2D:{
+      ImageProducer: "sbndwire"
+      ReferenceTensor2D: "sbndlepton"
+      OutputProducer: "sbndwire"
+      ProjectionIDs: [0,1,2]
+      Thresholds: [10,10,0]
+    }
+    MaskTensor3D: {
+      Tensor3DProducer:  "sbndvoxels"
+      OutputProducer:    "sbndvoxels"
+      ReferenceProducer: "sbndlepton"
+    }
+  }
+}
+
