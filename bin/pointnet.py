@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import os,sys
+import os,sys,signal
 import time
 
 
@@ -10,6 +10,14 @@ sys.path.insert(0,network_dir)
 
 # import the necessary
 from network.flags import FLAGS
+
+import signal, sys, os
+
+def sigquit_handler(signum, frame):
+    print('SIGQUIT received; exiting')
+    sys.exit(os.EX_SOFTWARE)
+
+
 
 def main():
     FLAGS.parse_args()
@@ -33,15 +41,20 @@ def main():
     if FLAGS.MODE == 'iotest':
         trainer.initialize(io_only=True)
 
+        time.sleep(0.1)
         for i in range(FLAGS.ITERATIONS):
             start = time.time()
-            _ = trainer.fetch_next_batch()
+            trainer.fetch_next_batch()
             end = time.time()
             if not FLAGS.DISTRIBUTED:
-                print("Time to fetch a minibatch of data: {}".format(end - start))
+                print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
             else:
                 if trainer._rank == 0:
-                    print("Time to fetch a minibatch of data: {}".format(end - start))
+                    print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
+            # time.sleep(0.5)
 
+    trainer.stop()
+    
 if __name__ == '__main__':
+    signal.signal(signal.SIGQUIT, sigquit_handler)
     main()

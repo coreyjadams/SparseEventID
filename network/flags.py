@@ -8,6 +8,30 @@ This script is heavily inspired by the following code from drinkingkazu:
 https://github.com/DeepLearnPhysics/dynamic-gcnn/blob/develop/dgcnn/flags.py
 '''
 
+
+def str2bool(v):
+    '''Convert string to boolean value
+    
+    This function is from stackoverflow: 
+    https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
+    
+    Arguments:
+        v {str} -- [description]
+    
+    Returns:
+        bool -- [description]
+    
+    Raises:
+        argparse -- [description]
+    '''
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
 class FLAGS:
     '''This class implements global flags through static variables
 
@@ -27,7 +51,7 @@ class FLAGS:
     # Parameters controlling training situations
     COMPUTE_MODE          = "CPU"
     TRAINING              = True
-    MINIBATCH_SIZE        = 4
+    MINIBATCH_SIZE        = 2
     CHECKPOINT_ITERATION  = 100
     SUMMARY_ITERATION     = 10
     PROFILE_ITERATION     = 100
@@ -40,24 +64,24 @@ class FLAGS:
     DISTRIBUTED           = False
 
     # IO paramters=  
-    FILE                  = '{}/io/dev_io.cfg'.format(top_dir)
+    FILE                  = '{}/io/dev/classification_3d_io.cfg'.format(top_dir)
     FILLER                = 'DevIO'
     IO_VERBOSITY          = 3
     KEYWORD_DATA          = 'data'
     KEYWORD_LABEL         = 'label'
 
     # Relevant parameters for running on KNL:
-    INTER_OP_PARALLELISM_THREADS     = 2
-    INTRA_OP_PARALLELISM_THREADS     = 128
+    INTER_OP_PARALLELISM_THREADS     = 4
+    INTRA_OP_PARALLELISM_THREADS     = 64
 
     @classmethod
     def _add_default_network_configuration(cls, parser):
 
         parser.add_argument('-nc','--num-classes', type=int, default=cls.NUM_CLASSES,
             help="Number of classes in the output classification network [default: {}]".format(cls.NUM_CLASSES))
-        parser.add_argument('-ub','--use-bias', type=bool, default=cls.USE_BIAS,
+        parser.add_argument('-ub','--use-bias', type=str2bool, default=cls.USE_BIAS,
             help="Whether or not to include bias terms in all mlp layers [default: {}]".format(cls.USE_BIAS))
-        parser.add_argument('-bn','--batch-norm', type=bool, default=cls.BATCH_NORM,
+        parser.add_argument('-bn','--batch-norm', type=str2bool, default=cls.BATCH_NORM,
             help="Whether or not to use batch normalization in all mlp layers [default: {}]".format(cls.BATCH_NORM))
 
         parser.add_argument('-v', '--verbosity', type=int,default=cls.VERBOSITY,
@@ -65,9 +89,6 @@ class FLAGS:
 
         parser.add_argument('-m','--compute_mode', type=str, choices=['CPU','GPU'], default=cls.COMPUTE_MODE,
             help="Selection of compute device, CPU or GPU  [default: {}]".format(cls.COMPUTE_MODE))
-
-        parser.add_argument('-mb','--minibatch-size',type=int, default=cls.MINIBATCH_SIZE,
-            help="Number of images in the minibatch size [default: {}]".format(cls.MINIBATCH_SIZE))
 
 
 
@@ -91,8 +112,13 @@ class FLAGS:
         parser.add_argument('-i','--iterations', type=int, default=cls.ITERATIONS,
             help="Number of iterations to process [default: {}]".format(cls.ITERATIONS))
 
-        parser.add_argument('-d','--distributed', type=bool, default=cls.DISTRIBUTED,
+        parser.add_argument('-d','--distributed', action='store_true', default=cls.DISTRIBUTED,
             help="Run with the MPI compatible mode [default: {}]".format(cls.DISTRIBUTED))
+        
+
+        parser.add_argument('-mb','--minibatch-size',type=int, default=cls.MINIBATCH_SIZE,
+            help="Number of images in the minibatch size [default: {}]".format(cls.MINIBATCH_SIZE))
+
         return parser
 
     @classmethod
@@ -122,7 +148,7 @@ class FLAGS:
 
         train_parser.add_argument('-rw','--regularize-weights', type=float, default=cls.REGULARIZE_WEIGHTS,
             help="Regularization strength for all learned weights [default: {}]".format(cls.REGULARIZE_WEIGHTS))
-        train_parser.add_argument('-rt','--regularize-transforms', type=bool, default=cls.REGULARIZE_TRANSFORMS,
+        train_parser.add_argument('-rt','--regularize-transforms', type=str2bool, default=cls.REGULARIZE_TRANSFORMS,
             help="Regularization strength for transformations [default: {}]".format(cls.REGULARIZE_TRANSFORMS))
 
 
@@ -139,6 +165,8 @@ class FLAGS:
         # cls.iotest_parser    = cls._add_default_parser_configuration(iotest_parser)
 
 
+
+
     @classmethod
     def parse_args(cls):
         cls._create_parsers()
@@ -148,14 +176,27 @@ class FLAGS:
 
     @classmethod
     def dump_config(cls):
-        print("\n\n-- CONFIG --")
-        for name in vars(cls):
-            if name != name.upper(): continue
-            attribute = getattr(cls,name)
-            if type(attribute) == type(cls._parser): continue
-            print("%s = %r" % (name, getattr(cls, name)))
+        print(cls.__str__())
             
 
+    @classmethod
+    def get_config(cls):
+        return cls.__str__()
+
+    @classmethod
+    def __str__(cls):
+        try:
+            _ = getattr(cls, '_parser')
+            s = "\n\n-- CONFIG --\n"
+            for name in vars(cls):
+                if name != name.upper(): continue
+                attribute = getattr(cls,name)
+                if type(attribute) == type(cls._parser): continue
+                s += " %s = %r\n" % (name, getattr(cls, name))
+            return s
+
+        except AttributeError:
+            return "ERROR: call parse_args()"
 
         # self.inference_parser.set_defaults(func=inference)
         # self.iotest_parser.set_defaults(func=iotest)
@@ -169,20 +210,6 @@ class FLAGS:
         for name,value in args.items():
             if name in ['func']: continue
             setattr(cls, name.upper(), args[name])
-        # os.environ['CUDA_VISIBLE_DEVICES']=self.GPUS
-        # self.GPUS=[int(gpu) for gpu in self.GPUS.split(',')]
-        # self.INPUT_FILE=[str(f) for f in self.INPUT_FILE.split(',')]
-        # if self.EDGE_CONV_FILTERS.find(',')>0:
-        #     self.EDGE_CONV_FILTERS = [int(v) for v in self.EDGE_CONV_FILTERS.split(',')]
-        # else:
-        #     self.EDGE_CONV_FILTERS = int(self.EDGE_CONV_FILTERS)
-        # if self.FC_FILTERS.find(',')>0:
-        #     self.FC_FILTERS = [int(v) for v in self.FC_FILTERS.split(',')]
-        # else:
-        #     self.FC_FILTERS = int(self.FC_FILTERS)
-        # if self.SEED < 0:
-        #     import time
-        #     self.SEED = int(time.time())
-    
 
-    
+
+

@@ -45,7 +45,8 @@ class trainercore(object):
         io_config = {
             'filler_name' : FLAGS.FILLER,
             'filler_cfg'  : FLAGS.FILE,
-            'verbosity'   : FLAGS.VERBOSITY
+            'verbosity'   : FLAGS.VERBOSITY,
+            'make_copy'   : True
         }
         data_keys = OrderedDict({
             'image': FLAGS.KEYWORD_DATA, 
@@ -99,6 +100,9 @@ class trainercore(object):
 
         self._initialize_io()
 
+
+
+
         if io_only:
             return
 
@@ -118,10 +122,10 @@ class trainercore(object):
 
         config = tf.ConfigProto()
 
-        if FLAGS.MODE == "CPU":
+        if FLAGS.COMPUTE_MODE == "CPU":
             config.inter_op_parallelism_threads = 2
             config.intra_op_parallelism_threads = 128
-        if FLAGS.MODE == "GPU":
+        if FLAGS.COMPUTE_MODE == "GPU":
             config.gpu_options.allow_growth = True
 
         # self._sess = tf.train.MonitoredTrainingSession(config=config)
@@ -401,9 +405,6 @@ class trainercore(object):
         for key in minibatch_data:
             minibatch_data[key] = numpy.reshape(minibatch_data[key], minibatch_dims[key])
 
-        # Reduce the image's extra dimensions:
-        minibatch_data['image'] = numpy.squeeze(minibatch_data['image'])
-        minibatch_data['image'] = self.image_to_point_cloud(minibatch_data['image'])
 
         return minibatch_data
 
@@ -415,6 +416,10 @@ class trainercore(object):
         self._sess.run(self._train_op, 
                        feed_dict = self.feed_dict(inputs = minibatch_data))
 
+
+    def stop(self):
+        # Mostly, this is just turning off the io:
+        self._larcv_interface.stop()
 
     def batch_process(self):
 
