@@ -3,6 +3,7 @@ import argparse
 import os,sys
 top_dir = os.path.dirname(os.path.abspath(__file__))
 top_dir = os.path.dirname(top_dir)
+
 '''
 This script is heavily inspired by the following code from drinkingkazu:
 https://github.com/DeepLearnPhysics/dynamic-gcnn/blob/develop/dgcnn/flags.py
@@ -61,6 +62,7 @@ class FLAGS(Borg):
         Borg.__init__(self)
 
 
+    def _set_defaults(self):
         # Parameters controlling training situations
         self.COMPUTE_MODE          = "CPU"
         self.TRAINING              = True
@@ -95,9 +97,6 @@ class FLAGS(Borg):
 
         self.KEYWORD_LABEL         = None
 
-        # Relevant parameters for running on KNL:
-        self.INTER_OP_PARALLELISM_THREADS     = 4
-        self.INTRA_OP_PARALLELISM_THREADS     = 64
 
 
         # Optional Test IO parameters:
@@ -222,6 +221,7 @@ class FLAGS(Borg):
 
 
     def parse_args(self):
+        self._set_defaults()
         self._create_parsers()
         args = self._parser.parse_args()
         self.update(vars(args))
@@ -272,8 +272,13 @@ class resnet(FLAGS):
     def __init__(self):
         FLAGS.__init__(self)
 
-        self.USE_BIAS                   = True
-        self.BATCH_NORM                 = True
+        # For the resnet object, we set the network as resnet:
+        from networks import resnet
+        self._net = resnet.ResNet
+
+
+    def _set_defaults(self):
+
         self.VERBOSITY                  = 0
 
 
@@ -284,14 +289,11 @@ class resnet(FLAGS):
         self.NPLANES                    = 3
         self.SHARE_WEIGHTS              = True
 
+        FLAGS._set_defaults(self)
+
     def _add_default_network_configuration(self, parser):
 
 
-
-        parser.add_argument('-ub','--use-bias', type=str2bool, default=self.USE_BIAS,
-            help="Whether or not to include bias terms in all mlp layers [default: {}]".format(self.USE_BIAS))
-        parser.add_argument('-bn','--batch-norm', type=str2bool, default=self.BATCH_NORM,
-            help="Whether or not to use batch normalization in all mlp layers [default: {}]".format(self.BATCH_NORM))
 
         parser.add_argument('-v', '--verbosity', type=int,default=self.VERBOSITY,
             help="Network verbosity at construction [default: {}]".format(self.VERBOSITY))

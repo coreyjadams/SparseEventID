@@ -5,10 +5,13 @@ from collections import OrderedDict
 
 import numpy
 
-from .pointnet import pointnet
+import torch
+import code
+
 from larcv import larcv_interface
 
-from .flags import FLAGS
+from . import flags
+FLAGS = flags.FLAGS()
 
 class trainercore(object):
     '''
@@ -21,37 +24,57 @@ class trainercore(object):
         self._larcv_interface = larcv_interface.larcv_interface()
         self._iteration       = 0
 
-        print (FLAGS.COMPUTE_MODE)
-
-        self._initialize()
-
-    def _initialize(self):
-
-        self._net = pointnet()
-
-
     def _initialize_io(self):
 
         # Prepare data managers:
-        mode = FLAGS.MODE
-
-        io_cfg = {
-            'filler_cfg'
-        }
-
         io_config = {
             'filler_name' : FLAGS.FILLER,
             'filler_cfg'  : FLAGS.FILE,
             'verbosity'   : FLAGS.VERBOSITY,
             'make_copy'   : True
         }
-        data_keys = OrderedDict({
-            'image': FLAGS.KEYWORD_DATA, 
-            'label': FLAGS.KEYWORD_LABEL
-            })
 
-        self._larcv_interface.prepare_manager(mode, io_config, FLAGS.MINIBATCH_SIZE, data_keys)
+        if FLAGS.LABEL_MODE == 'all':
 
+            data_keys = OrderedDict({
+                'image': FLAGS.KEYWORD_DATA, 
+                'label': FLAGS.KEYWORD_LABEL
+                })
+        else:
+            data_keys = OrderedDict({
+                'image': FLAGS.KEYWORD_DATA,
+                })
+            for label in FLAGS.KEYWORD_LABEL:
+                data_keys.update({label : label})
+
+
+        self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys)
+
+        # All of the additional tools are in case there is a test set up:
+        if FLAGS.AUX_FILE is not None:
+
+            io_config = {
+                'filler_name' : FLAGS.AUX_FILLER,
+                'filler_cfg'  : FLAGS.AUX_FILE,
+                'verbosity'   : FLAGS.VERBOSITY,
+                'make_copy'   : True
+            }
+
+            if FLAGS.LABEL_MODE == 'all':
+
+                data_keys = OrderedDict({
+                    'image': FLAGS.AUX_KEYWORD_DATA, 
+                    'label': FLAGS.AUX_KEYWORD_LABEL
+                    })
+            else:
+                data_keys = OrderedDict({
+                    'image': FLAGS.AUX_KEYWORD_DATA,
+                    })
+                for label in FLAGS.AUX_KEYWORD_LABEL:
+                    data_keys.update({label : label})
+
+
+            self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys)
 
 
     def _construct_graph(self):
@@ -62,18 +85,11 @@ class trainercore(object):
 
         # Make sure all required dimensions are present:
 
-        dims = self._larcv_interface.fetch_minibatch_dims('train')
+        dims = self._larcv_interface.fetch_minibatch_dims('primary')
+
 
         # Call the function to define the inputs
         self._input   = self._initialize_input(dims)
-
-        # Call the function to define the output
-        self._logits, self._transformations  = self._net._build_network(self._input)
-
-        n_trainable_parameters = 0
-        for var in tf.trainable_variables():
-            n_trainable_parameters += numpy.prod(var.get_shape())
-        print("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
 
         # Apply a softmax and argmax:
         self._outputs = self._create_softmax(self._logits)
@@ -91,23 +107,44 @@ class trainercore(object):
 
     def initialize(self, io_only=False):
 
-        # Verify the network object is set:
-        if not hasattr(self, '_net'):
-            raise Exception("Must set network object by calling set_network_object() before initialize")
-
         self._initialize_io()
-
-
 
 
         if io_only:
             return
 
-        self._construct_graph()
+        dims = self._larcv_interface.fetch_minibatch_dims('primary')
+
+
+        # This sets up the necessary output shape:
+        if FLAGS.LABEL_MODE == 'split':
+            output_shape = { key : dims[key] for key in FLAGS.KEYWORD_LABEL}
+        else:
+            output_shape = dims[FLAGS.KEYWORD_LABEL]
+
+
+        self._net = FLAGS._net(output_shape)
+        data = self.fetch_next_batch()['image']
+
+        input_tensor = torch.Tensor(data)
+
+        logits = self._net.forward(input_tensor)
+
+        print(logits.shape)
+        code.interact(local=locals())
+
+        print (self._net.parameters())
+
+        n_trainable_parameters = 0
+        for var in self._net.parameters():
+            n_trainable_parameters += numpy.prod(var.shape)
+        print("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
+
+        # self._construct_graph()
 
         # Create an optimizer:
         if FLAGS.LEARNING_RATE <= 0:
-            opt = tf.train.AdamOptimizer()
+            opt = torch.optim.Adam(self._net.parameters())
         else:
             opt = tf.train.AdamOptimizer(FLAGS.LEARNING_RATE)
 
@@ -120,10 +157,9 @@ class trainercore(object):
         config = tf.ConfigProto()
 
         if FLAGS.COMPUTE_MODE == "CPU":
-            config.inter_op_parallelism_threads = 2
-            config.intra_op_parallelism_threads = 128
+            pass
         if FLAGS.COMPUTE_MODE == "GPU":
-            config.gpu_options.allow_growth = True
+            self.model.cuda()
 
         # self._sess = tf.train.MonitoredTrainingSession(config=config)
         self._sess = tf.train.MonitoredTrainingSession(config=config, 
@@ -172,40 +208,40 @@ class trainercore(object):
 
         return hooks
 
-    def _initialize_input(self, dims):
-        '''Initialize input parameters of the network.  Must return a dict type
+    # def _initialize_input(self, dims):
+    #     '''Initialize input parameters of the network.  Must return a dict type
 
-        For exampe, paremeters of the dict can be 'image', 'label', 'weights', etc
+    #     For exampe, paremeters of the dict can be 'image', 'label', 'weights', etc
 
-        Arguments:
-            dims {[type]} -- [description]
+    #     Arguments:
+    #         dims {[type]} -- [description]
 
-        Keyword Arguments:
-            label_dims {[type]} -- [description] (default: {None})
+    #     Keyword Arguments:
+    #         label_dims {[type]} -- [description] (default: {None})
 
-        Raises:
-            NotImplementedError -- [description]
-        '''
+    #     Raises:
+    #         NotImplementedError -- [description]
+    #     '''
 
-        inputs = dict()
+    #     inputs = dict()
 
-        batch_size = self._larcv_interface.fetch_minibatch_dims(FLAGS.MODE)['label'][0]
+    #     batch_size = self._larcv_interface.fetch_minibatch_dims('primary')['label'][0]
 
-        inputs.update({
-            'image' : tf.placeholder(tf.float32, [batch_size, None, 3]),
-            'label' :  tf.placeholder(tf.int64,   dims['label'], name="input_label"),
-            }
-        )
+    #     inputs.update({
+    #         'image' : torch.tensor(tf.float32, [batch_size, None, 3]),
+    #         'label' :  tf.placeholder(tf.int64,   dims['label'], name="input_label"),
+    #         }
+    #     )
 
-        # inputs.update({
-        #     'image' :  tf.placeholder(tf.float32, dims['image'], name="input_image"),
-        #     'label' :  tf.placeholder(tf.int64,   dims['label'], name="input_label"),
-        # })
-
-
+    #     # inputs.update({
+    #     #     'image' :  tf.placeholder(tf.float32, dims['image'], name="input_image"),
+    #     #     'label' :  tf.placeholder(tf.int64,   dims['label'], name="input_label"),
+    #     # })
 
 
-        return inputs
+
+
+    #     return inputs
 
 
     def _create_softmax(self, logits):
@@ -393,10 +429,10 @@ class trainercore(object):
         return output
 
 
-    def fetch_next_batch(self):
+    def fetch_next_batch(self, mode='primary'):
 
-        minibatch_data = self._larcv_interface.fetch_minibatch_data(FLAGS.MODE)
-        minibatch_dims = self._larcv_interface.fetch_minibatch_dims(FLAGS.MODE)
+        minibatch_data = self._larcv_interface.fetch_minibatch_data(mode)
+        minibatch_dims = self._larcv_interface.fetch_minibatch_dims(mode)
 
 
         for key in minibatch_data:
