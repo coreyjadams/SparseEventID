@@ -42,7 +42,8 @@ class FLAGS:
     # Parameters to control the network implementation
     BATCH_NORM            = True
     USE_BIAS              = True
-    MODEL                 = 'pointnet'
+    # Options are "resnet", "pointnet", "sparseresnet"
+    MODEL                 = 'resnet'
     DIMENSIONS            = 2
 
 

@@ -5,9 +5,6 @@ from collections import OrderedDict
 
 import numpy
 
-import tensorflow as tf
-tf.logging.set_verbosity(tf.logging.INFO)
-
 from .pointnet import pointnet
 from larcv import larcv_interface
 
