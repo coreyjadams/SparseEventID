@@ -38,6 +38,9 @@ class pointnet(object):
         # The input is a point cloud
         x = inputs['image']
 
+        # We have to determine if this is a network operating on 3D data, or mulitple
+        # planes of 2D data
+
 
         # First, apply a transformation net to the input:
 

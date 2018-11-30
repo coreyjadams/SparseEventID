@@ -42,7 +42,9 @@ class FLAGS:
     # Parameters to control the network implementation
     BATCH_NORM            = True
     USE_BIAS              = True
-    NUM_CLASSES           = 3
+    MODEL                 = 'pointnet'
+    DIMENSIONS            = 2
+
 
     # Parameters controlling regularization
     REGULARIZE_WEIGHTS    = 0.001
@@ -63,12 +65,19 @@ class FLAGS:
 
     DISTRIBUTED           = False
 
-    # IO paramters=  
-    FILE                  = '{}/io/dev/classification_3d_io.cfg'.format(top_dir)
+    # IO parameters  
+    FILE                  = '{}/io/dev/classification_3d_io_all.cfg'.format(top_dir)
     FILLER                = 'DevIO'
     IO_VERBOSITY          = 3
     KEYWORD_DATA          = 'data'
-    KEYWORD_LABEL         = 'label'
+    LABEL_MODE            = 'split' # could also be 'all'
+
+    # These are "background" parameters
+    # And are meant to be copied to the 'KEYWORD_LABEL' area
+    KEYWORD_LABEL_ALL     = 'label'
+    KEYWORD_LABEL_SPLIT   = ['label_neut','label_cpi','label_npi','label_prot']
+
+    KEYWORD_LABEL         = None
 
     # Relevant parameters for running on KNL:
     INTER_OP_PARALLELISM_THREADS     = 4
@@ -77,8 +86,11 @@ class FLAGS:
     @classmethod
     def _add_default_network_configuration(cls, parser):
 
-        parser.add_argument('-nc','--num-classes', type=int, default=cls.NUM_CLASSES,
-            help="Number of classes in the output classification network [default: {}]".format(cls.NUM_CLASSES))
+        parser.add_argument('--model', type=str, default=cls.MODEL, choices=['pointnet'],
+            help="Model variant to use [default: {}]".format(cls.MODEL))
+        parser.add_argument('--dimensions', type=int, default=cls.DIMENSIONS,
+            help="Run in 2 or 3 dimensions [default: {}]".format(cls.DIMENSIONS))
+
         parser.add_argument('-ub','--use-bias', type=str2bool, default=cls.USE_BIAS,
             help="Whether or not to include bias terms in all mlp layers [default: {}]".format(cls.USE_BIAS))
         parser.add_argument('-bn','--batch-norm', type=str2bool, default=cls.BATCH_NORM,
@@ -89,7 +101,6 @@ class FLAGS:
 
         parser.add_argument('-m','--compute_mode', type=str, choices=['CPU','GPU'], default=cls.COMPUTE_MODE,
             help="Selection of compute device, CPU or GPU  [default: {}]".format(cls.COMPUTE_MODE))
-
 
 
 
@@ -115,6 +126,10 @@ class FLAGS:
         parser.add_argument('-d','--distributed', action='store_true', default=cls.DISTRIBUTED,
             help="Run with the MPI compatible mode [default: {}]".format(cls.DISTRIBUTED))
         
+        parser.add_argument('--label-mode', type=str, choices=['split', 'all'], default=cls.LABEL_MODE,
+            help="Run with split labels (multiple classifiers) or all in one [default: {}]".format(cls.LABEL_MODE))
+
+
 
         parser.add_argument('-mb','--minibatch-size',type=int, default=cls.MINIBATCH_SIZE,
             help="Number of images in the minibatch size [default: {}]".format(cls.MINIBATCH_SIZE))
@@ -125,11 +140,11 @@ class FLAGS:
     def _create_parsers(cls):
 
         cls._parser = argparse.ArgumentParser(description="PointNet Configuration Flags")
+
         subparsers = cls._parser.add_subparsers(title="Modules", 
                                                  description="Valid subcommands", 
                                                  dest='mode', 
                                                  help="Available subcommands: train, iotest")
-
 
 
         # train parser
@@ -210,6 +225,12 @@ class FLAGS:
         for name,value in args.items():
             if name in ['func']: continue
             setattr(cls, name.upper(), args[name])
+        # Take special care to reset the keyword label attribute 
+        # to match the label mode:
+        if cls.LABEL_MODE == "split":
+            cls.KEYWORD_LABEL = cls.KEYWORD_LABEL_SPLIT
+        elif cls.LABEL_MODE == "all":
+            cls.KEYWORD_LABEL = cls.KEYWORD_LABEL_ALL
 
 
 
