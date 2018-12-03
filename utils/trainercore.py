@@ -6,12 +6,17 @@ from collections import OrderedDict
 import numpy
 
 import torch
-import code
 
 from larcv import larcv_interface
 
 from . import flags
 FLAGS = flags.FLAGS()
+
+import datetime
+
+# This uses tensorboardX to save summaries and metrics to tensorboard compatible files.
+
+import tensorboardX
 
 class trainercore(object):
     '''
@@ -23,6 +28,7 @@ class trainercore(object):
     def __init__(self,):
         self._larcv_interface = larcv_interface.larcv_interface()
         self._iteration       = 0
+        self._global_step     = -1
 
     def _initialize_io(self):
 
@@ -77,34 +83,6 @@ class trainercore(object):
             self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys)
 
 
-    def _construct_graph(self):
-
-        # Net construction:
-        start = time.time()
-        sys.stdout.write("Begin constructing network\n")
-
-        # Make sure all required dimensions are present:
-
-        dims = self._larcv_interface.fetch_minibatch_dims('primary')
-
-
-        # Call the function to define the inputs
-        self._input   = self._initialize_input(dims)
-
-        # Apply a softmax and argmax:
-        self._outputs = self._create_softmax(self._logits)
-
-        self._accuracy = self._calculate_accuracy(self._input, self._outputs)
-
-        # Create the loss function
-        self._loss    = self._calculate_loss(self._input, self._logits, self._transformations)
-
-
-
-        end = time.time()
-        sys.stdout.write("Done constructing network. ({0:.2}s)\n".format(end-start))
-
-
     def initialize(self, io_only=False):
 
         self._initialize_io()
@@ -124,16 +102,12 @@ class trainercore(object):
 
 
         self._net = FLAGS._net(output_shape)
-        data = self.fetch_next_batch()['image']
 
-        input_tensor = torch.Tensor(data)
 
-        logits = self._net.forward(input_tensor)
+        if FLAGS.TRAINING: 
+            self._net.train(True)
 
-        print(logits.shape)
-        code.interact(local=locals())
 
-        print (self._net.parameters())
 
         n_trainable_parameters = 0
         for var in self._net.parameters():
@@ -144,105 +118,128 @@ class trainercore(object):
 
         # Create an optimizer:
         if FLAGS.LEARNING_RATE <= 0:
-            opt = torch.optim.Adam(self._net.parameters())
+            self._opt = torch.optim.Adam(self._net.parameters())
         else:
-            opt = tf.train.AdamOptimizer(FLAGS.LEARNING_RATE)
-
-        self._global_step = tf.train.get_or_create_global_step()
-        self._train_op = opt.minimize(self._loss, self._global_step)
+            self._opt = torch.optim.Adam(self._net.parameters(), FLAGS.LEARNING_RATE)
 
 
-        hooks = self.get_standard_hooks()
 
-        config = tf.ConfigProto()
+        # self._train_op = opt.minimize(self._loss, self._global_step)
+        self._criterion = torch.nn.CrossEntropyLoss()
+
+        # hooks = self.get_standard_hooks()
+
+
+        # Here, either restore the weights of the network or initialize it:
+        self._global_step = 0
+        self.restore_model()
+
 
         if FLAGS.COMPUTE_MODE == "CPU":
             pass
         if FLAGS.COMPUTE_MODE == "GPU":
-            self.model.cuda()
-
-        # self._sess = tf.train.MonitoredTrainingSession(config=config)
-        self._sess = tf.train.MonitoredTrainingSession(config=config, 
-            hooks = hooks,
-            checkpoint_dir= "{}/checkpoints/".format(FLAGS.LOG_DIRECTORY),
-            save_checkpoint_steps=FLAGS.CHECKPOINT_ITERATION)
+            self._net.cuda()
 
 
-    def get_standard_hooks(self):
-
-        print("LOG_DIRECTORY: ", FLAGS.LOG_DIRECTORY)
-        loss_is_nan_hook = tf.train.NanTensorHook(
-            self._loss,
-            fail_on_nan_loss=True,
-        )
-
-        # Create a hook to manage the summary saving:
-        summary_saver_hook = tf.train.SummarySaverHook(
-            save_steps = FLAGS.SUMMARY_ITERATION,
-            output_dir = FLAGS.LOG_DIRECTORY,
-            summary_op = tf.summary.merge_all()
-            )
-
-
-        # Create a profiling hook for tracing:
-        profile_hook = tf.train.ProfilerHook(
-            save_steps    = FLAGS.PROFILE_ITERATION,
-            output_dir    = FLAGS.LOG_DIRECTORY,
-            show_dataflow = True,
-            show_memory   = True
-        )
-
-        logging_hook = tf.train.LoggingTensorHook(
-            tensors       = { 'global_step' : self._global_step,
-                              'accuracy'    : self._accuracy,
-                              'loss'        : self._loss},
-            every_n_iter  = FLAGS.LOGGING_ITERATION,
-            )
-
-        hooks = [
-            loss_is_nan_hook,
-            summary_saver_hook,
-            profile_hook,
-            logging_hook,
-        ]
-
-        return hooks
-
-    # def _initialize_input(self, dims):
-    #     '''Initialize input parameters of the network.  Must return a dict type
-
-    #     For exampe, paremeters of the dict can be 'image', 'label', 'weights', etc
-
-    #     Arguments:
-    #         dims {[type]} -- [description]
-
-    #     Keyword Arguments:
-    #         label_dims {[type]} -- [description] (default: {None})
-
-    #     Raises:
-    #         NotImplementedError -- [description]
-    #     '''
-
-    #     inputs = dict()
-
-    #     batch_size = self._larcv_interface.fetch_minibatch_dims('primary')['label'][0]
-
-    #     inputs.update({
-    #         'image' : torch.tensor(tf.float32, [batch_size, None, 3]),
-    #         'label' :  tf.placeholder(tf.int64,   dims['label'], name="input_label"),
-    #         }
-    #     )
-
-    #     # inputs.update({
-    #     #     'image' :  tf.placeholder(tf.float32, dims['image'], name="input_image"),
-    #     #     'label' :  tf.placeholder(tf.int64,   dims['label'], name="input_label"),
-    #     # })
+        self._log_keys = ['loss', 'accuracy']
 
 
 
+    def restore_model(self):
+        ''' This function attempts to restore the model from file
+        '''
 
-    #     return inputs
+        _, checkpoint_file_path = self.get_model_filepath()
 
+        if not os.path.isfile(checkpoint_file_path):
+            return
+        # Parse the checkpoint file and use that to get the latest file path
+
+        with open(checkpoint_file_path, 'r') as _ckp:
+            for line in _ckp.readlines():
+                if line.startswith("latest: "):
+                    chkp_file = line.replace("latest: ", "").rstrip('\n')
+                    chkp_file = os.path.dirname(checkpoint_file_path) + "/" + chkp_file
+                    print("Restoring weights from ", chkp_file)
+                    break
+
+        state = torch.load(chkp_file)
+
+        self._net.load_state_dict(state['state_dict'])
+        self._opt.load_state_dict(state['optimizer'])
+        self._global_step = state['global_step']
+
+        return
+
+    def save_model(self):
+        '''Save the model to file
+        
+        '''
+
+        current_file_path, checkpoint_file_path = self.get_model_filepath()
+
+        # save the model state into the file path:
+        state_dict = {
+            'global_step' : self._global_step,
+            'state_dict'  : self._net.state_dict(),
+            'optimizer'   : self._opt.state_dict()
+        }
+
+        # Make sure the path actually exists:
+        if not os.path.isdir(os.path.dirname(current_file_path)):
+            os.makedirs(os.path.dirname(current_file_path))
+
+        torch.save(state_dict, current_file_path)
+
+        # Parse the checkpoint file to see what the last checkpoints were:
+
+        # Keep only the last 5 checkpoints
+        n_keep = 5
+
+
+        past_checkpoint_files = {}
+        try:
+            with open(checkpoint_file_path, 'r') as _chkpt:
+                for line in _chkpt.readlines():
+                    line = line.rstrip('\n')
+                    vals = line.split(":")
+                    if vals[0] != 'latest':
+                        past_checkpoint_files.update({int(vals[0]) : vals[1].replace(' ', '')})
+        except:
+            pass
+        
+
+        # Remove the oldest checkpoints while the number is greater than n_keep
+        while len(past_checkpoint_files) >= n_keep:
+            min_index = min(past_checkpoint_files.keys())
+            file_to_remove = os.path.dirname(checkpoint_file_path) + "/" + past_checkpoint_files[min_index]
+            os.remove(file_to_remove)
+            past_checkpoint_files.pop(min_index)
+
+
+
+        # Update the checkpoint file
+        with open(checkpoint_file_path, 'w') as _chkpt:
+            _chkpt.write('latest: {}\n'.format(os.path.basename(current_file_path)))
+            _chkpt.write('{}: {}\n'.format(self._global_step, os.path.basename(current_file_path)))
+            for key in past_checkpoint_files:
+                _chkpt.write('{}: {}\n'.format(key, past_checkpoint_files[key]))
+
+
+    def get_model_filepath(self):
+        '''Helper function to build the filepath of a model for saving and restoring:
+        
+        
+        '''
+
+        # Find the base path of the log directory
+        file_path= FLAGS.LOG_DIRECTORY  + "/checkpoints/"
+
+
+        name = file_path + 'model-{}.ckpt'.format(self._global_step)
+        checkpoint_file_path = file_path + "checkpoint"
+
+        return name, checkpoint_file_path
 
     def _create_softmax(self, logits):
         '''Must return a dict type
@@ -263,171 +260,111 @@ class trainercore(object):
 
         # Take the logits (which are one per plane) and create a softmax and prediction (one per plane)
 
-        output['softmax'] = tf.nn.softmax(logits)
-        output['prediction'] = tf.argmax(logits, axis=-1)
+        output['softmax'] = nn.softmax(logits)
+        output['prediction'] = nn.argmax(logits, axis=1)
 
 
         return output
 
 
 
-    # def compute_weights(self, labels, boost_labels = None):
-    #     '''
-    #     This is NOT a tensorflow implementation, but a numpy implementation.
-    #     Running on CPUs this might not make a difference.  Running on GPUs
-    #     it might be good to move this to a GPU, but I suspect it's not needed.
-    #     '''
-    #     # Take the labels, and compute the per-label weight
-
-
-    #     # Prepare output weights:
-    #     weights = numpy.zeros(labels.shape)
-
-    #     i = 0
-    #     for batch in labels:
-    #         # First, figure out what the labels are and how many of each:
-    #         values, counts = numpy.unique(batch, return_counts=True)
-
-    #         n_pixels = numpy.sum(counts)
-    #         for value, count in zip(values, counts):
-    #             weight = 1.0*(n_pixels - count) / n_pixels
-    #             if boost_labels is not None and value in boost_labels.keys():
-    #                 weight *= boost_labels[value]
-    #             mask = labels[i] == value
-    #             weights[i, mask] += weight
-    #         weights[i] *= 1. / numpy.sum(weights[i])
-    #         i += 1
-
-
-
-    #     # Normalize the weights to sum to 1 for each event:
-    #     return weights
-
-
-
-    def _calculate_loss(self, inputs, logits, transformations):
+    def _calculate_loss(self, inputs, logits):
         ''' Calculate the loss.
 
         returns a single scalar for the optimizer to use.
         '''
 
 
-        with tf.name_scope('cross_entropy'):
 
-            # Traditional Classification loss:            
-            loss = tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits_v2(labels=inputs['label'],
-                                                           logits=logits)
-                )
-            tf.summary.scalar("Classification_Loss",loss)
-
-            # If desired, add weight regularization loss:
-            if FLAGS.REGULARIZE_WEIGHTS != 0.0:
-                reg_loss = tf.reduce_mean(tf.losses.get_regularization_losses())
-                tf.summary.scalar("Weight_Regularization", reg_loss)
-                loss += reg_loss
-
-            # Add a regularization loss against the matrix transformations:
-            t_loss = None
-            for transformation in transformations:
-                mat_dim = transformation.get_shape().as_list()[-1]
-                batch_size = self._larcv_interface.fetch_minibatch_dims(FLAGS.MODE)['label'][0]
-                difference_to_identity = tf.eye(mat_dim, batch_shape = [batch_size]) 
-                difference_to_identity -= tf.matmul(transformation, tf.matrix_transpose(transformation))
-                this_t_loss = tf.reduce_mean(tf.nn.l2_normalize(difference_to_identity))
-                this_t_loss = FLAGS.REGULARIZE_TRANSFORMS*this_t_loss
-                if t_loss is None:
-                    t_loss = this_t_loss
-                else:
-                    t_loss += this_t_loss
-
-            if t_loss is not None:
-                tf.summary.scalar("Transformation_Loss", t_loss)
-                loss += t_loss
-
-            # Total summary:
-            tf.summary.scalar("Total_Loss",loss)
-
+        if FLAGS.LABEL_MODE == 'all':
+            values, target = torch.max(inputs[FLAGS.KEYWORD_LABEL], dim = 1)
+            loss = self._criterion(logits, target=target)
             return loss
 
 
-
-
-    def _calculate_accuracy(self, inputs, outputs):
-        ''' Calculate the accuracy.  Computes total average accuracy,
-        accuracy on just non zero pixels, and accuracy on just neutrino pixels.
+    def _calculate_accuracy(self, logits, minibatch_data):
+        ''' Calculate the accuracy.
 
         '''
 
         # Compare how often the input label and the output prediction agree:
 
-
-        with tf.name_scope('accuracy'):
-
-            correct_prediction = tf.equal(tf.argmax(inputs['label'], -1),
-                                          outputs['prediction'])
-            accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-            tf.summary.scalar("Accuracy", accuracy)
+        values, indices = torch.max(minibatch_data[FLAGS.KEYWORD_LABEL], dim = 1)
+        values, predict = torch.max(logits, dim=1)
+        correct_prediction = torch.eq(predict,indices)
+        accuracy = torch.mean(correct_prediction.float())
 
         return accuracy
 
 
 
 
-    def feed_dict(self, inputs):
-        '''Build the feed dict
+    # def image_to_point_cloud(self, image):
 
-        Take input images, labels and match
-        to the correct feed dict tensorrs
-
-        This is probably overridden in the subclass, but here you see the idea
-
-        Arguments:
-            images {dict} -- Dictionary containing the input tensors
-
-        Returns:
-            [dict] -- Feed dictionary for a tf session run call
-
-        '''
-        fd = dict()
-
-        for key in inputs:
-            if inputs[key] is not None:
-                fd.update({self._input[key] : inputs[key]})
-
-        return fd
+    #     # This function maps an image to a point cloud
 
 
-    def image_to_point_cloud(self, image):
+    #     # Have to do this image by image to get the right shape:
+    #     outputs = []
+    #     max_points= 0
+    #     for b in range(image.shape[0]):
 
-        # This function maps an image to a point cloud
+    #         non_zero_locs = list(numpy.where(image[b] != 0))
+    #         # Calculate the values and put them last:
+    #         values = image[b][tuple(non_zero_locs)]
+    #         if values.shape[0] > max_points:
+    #             max_points = values.shape[0]
+    #         # Merge everything into an N by 2 array:
+    #         non_zero_locs.append(values)
+    #         point_dim_len = len(non_zero_locs)
+    #         # Stack everythin together and take the transpose:
+    #         res = numpy.stack((non_zero_locs)).T
+    #         outputs.append(res)
+
+    #     # Stack the results into a uniform numpy array padded with zeros:
+    #     output = numpy.zeros([len(outputs), max_points, point_dim_len])
+    #     for i, o in enumerate(outputs):
+    #         npoints = len(o)
+    #         output[i,0:npoints,:] = o
+
+    #     return output
+
+    def _compute_metrics(self, logits, minibatch_data, loss):
+
+        # Call all of the functions in the metrics dictionary:
+        metrics = {}
+
+        metrics['loss']     = loss.data
+        metrics['accuracy'] = self._calculate_accuracy(logits, minibatch_data)
+
+        return metrics
+
+    def log(self, metrics):
 
 
-        # Have to do this image by image to get the right shape:
-        outputs = []
-        max_points= 0
-        for b in range(image.shape[0]):
+        if self._global_step % FLAGS.LOGGING_ITERATION == 0:
+            
+            self._current_log_time = datetime.datetime.now()
 
-            non_zero_locs = list(numpy.where(image[b] != 0))
-            # Calculate the values and put them last:
-            values = image[b][tuple(non_zero_locs)]
-            if values.shape[0] > max_points:
-                max_points = values.shape[0]
-            # Merge everything into an N by 2 array:
-            non_zero_locs.append(values)
-            point_dim_len = len(non_zero_locs)
-            # Stack everythin together and take the transpose:
-            res = numpy.stack((non_zero_locs)).T
-            outputs.append(res)
+            # Build up a string for logging:
+            if self._log_keys != []:
+                s = ", ".join(["{0}: {1:.4}".format(key, metrics[key]) for key in self._log_keys])
+            else:
+                s = ", ".join(["{0}: {1:.4}".format(key, metrics[key]) for key in metrics])
+      
+            try:
+                s += " ({} s)".format((self._current_log_time - self._previous_log_time).total_seconds())
+            except:
+                pass
 
-        # Stack the results into a uniform numpy array padded with zeros:
-        output = numpy.zeros([len(outputs), max_points, point_dim_len])
-        for i, o in enumerate(outputs):
-            npoints = len(o)
-            output[i,0:npoints,:] = o
+            self._previous_log_time = self._current_log_time
 
-        return output
+            print("Global Step {} metrics: {}".format(self._global_step, s))
 
+
+
+    def summary(self, metrics):
+        pass
 
     def fetch_next_batch(self, mode='primary'):
 
@@ -441,20 +378,111 @@ class trainercore(object):
 
         return minibatch_data
 
+    def increment_global_step(self):
+
+        self._global_step += 1
+
     def train_step(self):
 
 
+        # For a train step, we fetch data, run a forward and backward pass, and
+        # if this is a logging step, we compute some logging metrics.
+
+        # Reset the gradient values for this step:
+        self._opt.zero_grad()
+
+        # Fetch the next batch of data with larcv
         minibatch_data = self.fetch_next_batch()
 
-        self._sess.run(self._train_op, 
-                       feed_dict = self.feed_dict(inputs = minibatch_data))
+        # Convert the input data to torch tensors
+        minibatch_data = {key : torch.Tensor(minibatch_data[key]) for key in minibatch_data }
+        
+        # if using cuda, copy the input data to GPU:
+        if FLAGS.COMPUTE_MODE == "GPU":
+            for key in minibatch_data: minibatch_data[key].cuda()
+
+        # Run a forward pass of the model on the input image:
+        logits = self._net(minibatch_data['image'])
+
+        # Compute the loss based on the logits
+        loss = self._calculate_loss(minibatch_data, logits)
+
+        # Compute the gradients for the network parameters:
+        loss.backward()
+
+        # Compute any necessary metrics:
+        metrics = self._compute_metrics(logits, minibatch_data, loss)
+        
+        self.log(metrics) 
+
+        self.summary(metrics)       
+
+        # Apply the parameter update:
+        self._opt.step()
+
+        # Increment the global step value:
+        self.increment_global_step()
+
+        return metrics
+
+    def val_step(self, n_iterations=1):
+        # perform a validation step
+        # Validation steps can optionally accumulate over several minibatches, to
+        # fit onto a gpu or other accelerator
+
+        total_metrics = {}
+        for iteration in range(n_iterations):
+
+            # Fetch the next batch of data with larcv
+            # (Make sure to pull from the validation set)
+            minibatch_data = self.fetch_next_batch('aux')        
+
+            # Convert the input data to torch tensors
+            minibatch_data = {key : torch.Tensor(minibatch_data[key]) for key in minibatch_data }
+            
+            # if using cuda, copy the input data to GPU:
+            if FLAGS.COMPUTE_MODE == "GPU":
+                for key in minibatch_data: minibatch_data[key].cuda()
+
+            # Run a forward pass of the model on the input image:
+            logits = self._net(minibatch_data['image'])
+
+            # Compute the metrics for this iteration:
+            metrics = self._compute_metrics()
+
+
+            # Add them to the total metrics for this validation step:
+            if total_metrics == {}:
+                total_metrics = metrics
+            else:
+                total_metrics = { total_metrics[key] + metrics[key] for key in metrics}
+
+
+        # Average metrics over the total number of iterations:
+        total_metrics = { total_metrics[key] / n_iterations for key in metrics}
+
+        return metrics
 
 
     def stop(self):
         # Mostly, this is just turning off the io:
         self._larcv_interface.stop()
 
+    def checkpoint(self):
+
+        if self._global_step % FLAGS.CHECKPOINT_ITERATION == 0 and self._global_step != 0:
+            # Save a checkpoint, but don't do it on the first pass
+            self.save_model()
+
+
     def batch_process(self):
+
+        # At the begining of batch process, figure out the epoch size:
+        self._epoch_size = self._larcv_interface.size('primary')
+
+        # This is the 'master' function, so it controls a lot
+
+
 
         # Run iterations
         for i in range(FLAGS.ITERATIONS):
@@ -464,3 +492,6 @@ class trainercore(object):
 
             # Start IO thread for the next batch while we train the network
             self.train_step()
+
+            self.checkpoint()
+

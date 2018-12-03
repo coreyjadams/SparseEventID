@@ -178,8 +178,8 @@ class FLAGS(Borg):
                                   help='Initial learning rate [default: {}]'.format(self.LEARNING_RATE))
         self.train_parser.add_argument('-si','--summary-iteration', type=int, default=self.SUMMARY_ITERATION,
                                   help='Period (in steps) to store summary in tensorboard log [default: {}]'.format(self.SUMMARY_ITERATION))
-        # self.train_parser.add_argument('-pi','--profile-iteration', type=int, default=self.PROFILE_ITERATION,
-        #                           help='Period (in steps) to store profiling in tensorboard log [default: {}]'.format(self.PROFILE_ITERATION))
+        self.train_parser.add_argument('-li','--logging-iteration', type=int, default=self.LOGGING_ITERATION,
+                                  help='Period (in steps) to print values to log [default: {}]'.format(self.LOGGING_ITERATION))
         self.train_parser.add_argument('-ci','--checkpoint-iteration', type=int, default=self.CHECKPOINT_ITERATION,
                                   help='Period (in steps) to store snapshot of weights [default: {}]'.format(self.CHECKPOINT_ITERATION))
 
