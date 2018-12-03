@@ -252,7 +252,7 @@ class ResNet(torch.nn.Module):
 
             # Apply global average pooling 
             kernel_size = output.shape[2:]
-            output = torch.squeeze(nn.AvgPool2d(kernel_size)(output))
+            output = torch.squeeze(nn.AvgPool2d(kernel_size, ceil_mode=False)(output))
 
             output = nn.Softmax(dim=1)(output)
 
@@ -267,7 +267,7 @@ class ResNet(torch.nn.Module):
 
                 # Apply global average pooling 
                 kernel_size = output[key].shape[1:-1]
-                output[key] = nn.AvgPool2d(kernel_size)(output[key])
+                output[key] = nn.AvgPool2d(kernel_size, ceil_mode=False)(output[key])
 
                 output[key] = nn.Softmax(dim=1)(output[key])
 

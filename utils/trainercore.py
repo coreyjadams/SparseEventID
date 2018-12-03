@@ -93,7 +93,6 @@ class trainercore(object):
 
         dims = self._larcv_interface.fetch_minibatch_dims('primary')
 
-
         # This sets up the necessary output shape:
         if FLAGS.LABEL_MODE == 'split':
             output_shape = { key : dims[key] for key in FLAGS.KEYWORD_LABEL}
@@ -129,6 +128,16 @@ class trainercore(object):
 
         # hooks = self.get_standard_hooks()
 
+
+        # This sets up the summary saver:
+        self._saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY)
+
+        # This code is supposed to add the graph definition.
+        # It doesn't currently work
+            # temp_dims = list(dims['image'])
+            # temp_dims[0] = 1
+            # dummy_input = torch.randn(size=tuple(temp_dims), requires_grad=True)
+            # self._saver.add_graph(self._net, (dummy_input,))
 
         # Here, either restore the weights of the network or initialize it:
         self._global_step = 0
@@ -364,7 +373,12 @@ class trainercore(object):
 
 
     def summary(self, metrics):
-        pass
+
+        if self._global_step % FLAGS.SUMMARY_ITERATION == 0:
+            for metric in metrics:
+                self._saver.add_scalar(metric, metrics[metric], self._global_step)
+
+            pass
 
     def fetch_next_batch(self, mode='primary'):
 
@@ -388,11 +402,16 @@ class trainercore(object):
         # For a train step, we fetch data, run a forward and backward pass, and
         # if this is a logging step, we compute some logging metrics.
 
+
+        global_start_time = datetime.datetime.now()
+
         # Reset the gradient values for this step:
         self._opt.zero_grad()
 
         # Fetch the next batch of data with larcv
+        io_start_time = datetime.datetime.now()
         minibatch_data = self.fetch_next_batch()
+        io_end_time = datetime.datetime.now()
 
         # Convert the input data to torch tensors
         minibatch_data = {key : torch.Tensor(minibatch_data[key]) for key in minibatch_data }
@@ -415,10 +434,24 @@ class trainercore(object):
         
         self.log(metrics) 
 
+        # Add the global step / second to the tensorboard log:
+        try:
+            metrics['global_step/sec'] = self._global_step_per_second
+        except:
+            metrics['global_step/sec'] = 0.0
+
+        metrics['io_fetch_time'] = (io_end_time - io_start_time).total_seconds()
+
+
+
         self.summary(metrics)       
 
         # Apply the parameter update:
         self._opt.step()
+        global_end_time = datetime.datetime.now()
+
+        # Compute global step per second:
+        self._global_step_per_second = (global_end_time - global_start_time).total_seconds()
 
         # Increment the global step value:
         self.increment_global_step()
@@ -488,10 +521,13 @@ class trainercore(object):
         for i in range(FLAGS.ITERATIONS):
             if FLAGS.TRAINING and self._iteration >= FLAGS.ITERATIONS:
                 print('Finished training (iteration %d)' % self._iteration)
+                self.checkpoint()
                 break
 
             # Start IO thread for the next batch while we train the network
             self.train_step()
 
             self.checkpoint()
+
+        self._saver.close()
 
