@@ -208,6 +208,14 @@ class ResNet(torch.nn.Module):
         # The rest of the final operations (reshape, softmax) are computed in the forward pass
 
 
+        # Configure initialization:
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
     def forward(self, x):
         
         FLAGS = flags.FLAGS()
@@ -229,7 +237,6 @@ class ResNet(torch.nn.Module):
 
         # Merge the 3 streams into one with a concat:
         x = torch.cat(x, dim=1)
-        print(x.shape)
 
         # Apply the after-concat convolutions:
         for i in range(len(self.post_convolutional_layers)):
@@ -247,7 +254,7 @@ class ResNet(torch.nn.Module):
             kernel_size = output.shape[2:]
             output = torch.squeeze(nn.AvgPool2d(kernel_size)(output))
 
-            output = nn.Softmax(dim=-1)(output)
+            output = nn.Softmax(dim=1)(output)
 
         else:
             output = {}
@@ -262,7 +269,7 @@ class ResNet(torch.nn.Module):
                 kernel_size = output[key].shape[1:-1]
                 output[key] = nn.AvgPool2d(kernel_size)(output[key])
 
-                output[key] = nn.Softmax(dim=-1)(output[key])
+                output[key] = nn.Softmax(dim=1)(output[key])
 
         return output
 
