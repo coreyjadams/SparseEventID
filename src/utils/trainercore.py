@@ -435,9 +435,28 @@ class trainercore(object):
         # Convert the input data to torch tensors
         if FLAGS.COMPUTE_MODE == "GPU":
             device = torch.device('cuda')
-            minibatch_data = {key : torch.tensor(minibatch_data[key],device=device) for key in minibatch_data }
+            for key in minibatch_data:
+                if key == 'image' and FLAGS.SPARSE:
+                    if '3d' in FLAGS.FILE:
+                        minibatch_data['image'] = (
+                            torch.tensor(v, device=device) for v in minibatch_data['image'])
+                    else:
+                        new_image = []
+                        for p in range(len(minibatch_data['image'])):
+                            new_tuple = (
+                                torch.tensor(minibatch_data['image'][p][0], device=device),
+                                torch.tensor(minibatch_data['image'][p][1], device=device),
+                                torch.tensor(minibatch_data['image'][p][2], device=device),
+                                )
+                            new_image.append(new_tuple)
+                        minibatch_data['image'] = new_image
+                else:
+                    minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
         else:
-            minibatch_data = {key : torch.tensor(minibatch_data[key]) for key in minibatch_data }
+            for key in minibatch_data:
+                if key == 'image' and FLAGS.SPARSE:
+                    minibatch_data['image'][0] = torch.tensor(minibatch_data['image'][0])
+                minibatch_data[key] = torch.tensor(minibatch_data[key])
 
 
 

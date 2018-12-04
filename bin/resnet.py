@@ -13,6 +13,7 @@ sys.path.insert(0,network_dir)
 # import the necessary
 from src.utils import flags
 from src.networks import resnet
+from src.networks import sparseresnet
 
 
 def main():
@@ -38,7 +39,10 @@ def main():
         trainer = trainercore.trainercore()
         
     if FLAGS.MODE == 'train':
-        net = resnet.ResNet
+        if FLAGS.SPARSE:
+            net = sparseresnet.ResNet
+        else:
+            net = resnet.ResNet
         FLAGS.set_net(net)
         trainer.initialize()
         trainer.batch_process()

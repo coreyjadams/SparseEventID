@@ -51,8 +51,7 @@ def larcvsparse_to_scnsparse_3d(input_array):
     # And stack this into one numpy array:
     dimension = numpy.vstack(dimension_list)
 
-    output_array = (dimension, features, batch_size)
-
+    output_array = (dimension, features, batch_size,)
     return output_array
 
 
