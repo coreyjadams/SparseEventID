@@ -9,6 +9,8 @@ network_dir = os.path.dirname(os.path.abspath(__file__))
 network_dir = os.path.dirname(network_dir)
 sys.path.insert(0,network_dir)
 
+print(sys.path)
+
 # import the necessary
 from utils import flags
 

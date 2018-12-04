@@ -1,5 +1,8 @@
 import torch
 import torch.nn as nn
+import sys
+
+print(sys.path)
 
 from utils import flags
 
