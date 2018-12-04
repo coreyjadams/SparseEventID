@@ -201,9 +201,10 @@ class ResNet(torch.nn.Module):
         else:
             self.final_layer = { key : BlockSeries(n_filters, n_filters, FLAGS.RES_BLOCKS_PER_LAYER) for key in output_shape}
             self.bottleneck  = { key : conv1x1(n_filters, output_shape[key][-1]) for key in output_shape}
+            for key in self.final_layer:
+                self.add_module("final_layer_{}".format(key), self.final_layer[key])
+                self.add_module("bottleneck_{}".format(key), self.final_layer[key])
 
-            ### TODO:
-            # Add the split paths with add_module
 
         # The rest of the final operations (reshape, softmax) are computed in the forward pass
 
