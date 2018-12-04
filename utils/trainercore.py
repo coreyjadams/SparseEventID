@@ -134,10 +134,10 @@ class trainercore(object):
 
         # This code is supposed to add the graph definition.
         # It doesn't currently work
-            # temp_dims = list(dims['image'])
-            # temp_dims[0] = 1
-            # dummy_input = torch.randn(size=tuple(temp_dims), requires_grad=True)
-            # self._saver.add_graph(self._net, (dummy_input,))
+        # temp_dims = list(dims['image'])
+        # temp_dims[0] = 1
+        # dummy_input = torch.randn(size=tuple(temp_dims), requires_grad=True)
+        # self._saver.add_graph(self._net, (dummy_input,))
 
         # Here, either restore the weights of the network or initialize it:
         self._global_step = 0
