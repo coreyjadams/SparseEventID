@@ -1,8 +1,8 @@
 import argparse
 
 import os,sys
-top_dir = os.path.dirname(os.path.abspath(__file__))
-top_dir = os.path.dirname(top_dir)
+# top_dir = os.path.dirname(os.path.abspath(__file__))
+# top_dir = os.path.dirname(top_dir)
 
 '''
 This script is heavily inspired by the following code from drinkingkazu:
@@ -272,9 +272,10 @@ class resnet(FLAGS):
     def __init__(self):
         FLAGS.__init__(self)
 
+
+    def set_net(self, net):
         # For the resnet object, we set the network as resnet:
-        from networks import resnet
-        self._net = resnet.ResNet
+        self._net = net
 
 
     def _set_defaults(self):

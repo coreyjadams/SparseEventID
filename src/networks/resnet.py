@@ -4,7 +4,7 @@ import sys
 
 print(sys.path)
 
-from utils import flags
+from . import utils
 
 
 #####################################################################
