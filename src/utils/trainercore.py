@@ -10,6 +10,7 @@ import torch
 from larcv import larcv_interface
 
 from . import flags
+from . import data_transforms
 FLAGS = flags.FLAGS()
 
 import datetime
@@ -389,6 +390,24 @@ class trainercore(object):
         for key in minibatch_data:
             minibatch_data[key] = numpy.reshape(minibatch_data[key], minibatch_dims[key])
 
+        # Here, do some massaging to convert the input data to another format, if necessary:
+        if FLAGS.IMAGE_MODE == 'dense' and not FLAGS.SPARSE:
+            # Don't have to do anything here
+            pass
+        elif FLAGS.IMAGE_MODE == 'dense' and FLAGS.SPARSE:
+            # Have to convert the input image from dense to sparse format:
+            if '3d' in FLAGS.FILE:
+                minibatch_data['image'] = data_transforms.larcvdense_to_scnsparse_3d(minibatch_data['image'])
+            else:
+                minibatch_data['image'] = data_transforms.larcvdense_to_scnsparse_2d(minibatch_data['image'])
+        elif FLAGS.IMAGE_MODE == 'sparse' and not FLAGS.SPARSE:
+            # Need to convert sparse larcv into a dense numpy array:
+            minibatch_data['image'] = data_transforms.larcvsparse_to_dense(minibatch_data['image'])
+        elif FLAGS.IMAGE_MODE == 'sparse' and FLAGS.SPARSE:
+            if '3d' in FLAGS.FILE:
+                minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_3d(minibatch_data['image'])
+            else:
+                minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_2d(minibatch_data['image'])
 
         return minibatch_data
 

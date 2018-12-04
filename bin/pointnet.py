@@ -10,7 +10,7 @@ network_dir = os.path.dirname(network_dir)
 sys.path.insert(0,network_dir)
 
 # import the necessary
-from network.flags import FLAGS
+from python.flags import FLAGS
 
 
 def main():

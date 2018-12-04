@@ -77,6 +77,8 @@ class FLAGS(Borg):
 
         self.DISTRIBUTED           = False
 
+        # To be clear, this is specifying the image mode from larcv ThreadIO,
+        # Not the input to the network
         self.IMAGE_MODE            = 'dense' # Can also be 'sparse'
 
         # IO parameters  
@@ -196,6 +198,7 @@ class FLAGS(Borg):
 
         # IO test parser
         self.iotest_parser = subparsers.add_parser("iotest", help="Test io only (no network)")
+        self.iotest_parser  = self._add_default_network_configuration(self.iotest_parser)
         self.iotest_parser = self._add_default_io_configuration(self.iotest_parser)
         self.iotest_parser = self._add_aux_io_configuration(self.iotest_parser)
         self.iotest_parser  = self._add_core_configuration(self.iotest_parser)
@@ -270,59 +273,8 @@ class FLAGS(Borg):
     def _add_default_network_configuration(self, parser):
         raise NotImplementedError("Must use a derived class which overrides this function")
 
+
 class resnet(FLAGS):
-    ''' Resnet specific flags
-    '''
-
-    def __init__(self):
-        FLAGS.__init__(self)
-
-
-    def set_net(self, net):
-        # For the resnet object, we set the network as resnet:
-        self._net = net
-
-
-    def _set_defaults(self):
-
-        self.VERBOSITY                  = 0
-
-
-        self.N_INITIAL_FILTERS          = 5
-        self.RES_BLOCKS_PER_LAYER       = 2
-        self.NETWORK_DEPTH_PRE_MERGE    = 3
-        self.NETWORK_DEPTH_POST_MERGE   = 3
-        self.NPLANES                    = 3
-        self.SHARE_WEIGHTS              = True
-
-        FLAGS._set_defaults(self)
-
-    def _add_default_network_configuration(self, parser):
-
-
-
-        parser.add_argument('-v', '--verbosity', type=int,default=self.VERBOSITY,
-            help="Network verbosity at construction [default: {}]".format(self.VERBOSITY))
-
-
-        parser.add_argument('--n-initial-filters', type=int, default=self.N_INITIAL_FILTERS,
-            help="Number of filters applied, per plane, for the initial convolution [default: {}]".format(self.N_INITIAL_FILTERS))
-        parser.add_argument('--res-blocks-per-layer', type=int, default=self.RES_BLOCKS_PER_LAYER,
-            help="Number of residual blocks per layer [default: {}]".format(self.RES_BLOCKS_PER_LAYER))
-        parser.add_argument('--network-depth-pre-merge', type=int, default=self.NETWORK_DEPTH_PRE_MERGE,
-            help="Total number of downsamples to apply before merging planes [default: {}]".format(self.NETWORK_DEPTH_PRE_MERGE))
-        parser.add_argument('--network-depth-post-merge', type=int, default=self.NETWORK_DEPTH_POST_MERGE,
-            help="Total number of downsamples to apply after merging planes [default: {}]".format(self.NETWORK_DEPTH_POST_MERGE))
-        parser.add_argument('--nplanes', type=int, default=self.NPLANES,
-            help="Number of planes to split the initial image into [default: {}]".format(self.NPLANES))
-        parser.add_argument('--share-weights', type=str2bool, default=self.SHARE_WEIGHTS,
-            help="Whether or not to share weights across planes [default: {}]".format(self.SHARE_WEIGHTS))
-
-
-
-        return parser
-
-class sparseresnet(FLAGS):
     ''' Sparse Resnet specific flags
     '''
 
@@ -345,11 +297,13 @@ class sparseresnet(FLAGS):
         self.NPLANES                    = 3
         self.SHARE_WEIGHTS              = True
 
+        self.SPARSE                     = False
+
         FLAGS._set_defaults(self)
 
     def _add_default_network_configuration(self, parser):
 
-
+        print("Called")
 
         parser.add_argument('-v', '--verbosity', type=int,default=self.VERBOSITY,
             help="Network verbosity at construction [default: {}]".format(self.VERBOSITY))
@@ -368,6 +322,7 @@ class sparseresnet(FLAGS):
         parser.add_argument('--share-weights', type=str2bool, default=self.SHARE_WEIGHTS,
             help="Whether or not to share weights across planes [default: {}]".format(self.SHARE_WEIGHTS))
 
-
+        parser.add_argument('--sparse', action='store_true', default=self.SPARSE,
+            help="Run using submanifold sparse convolutions [default: {}]".format(self.SPARSE))
 
         return parser

@@ -51,9 +51,6 @@ def main():
         for i in range(FLAGS.ITERATIONS):
             start = time.time()
             mb = trainer.fetch_next_batch()
-            print(mb['image'].shape)
-            # print(mb['image'][0])
-            print("Number of non zero elements: ", numpy.count_nonzero(mb['image']))
             end = time.time()
             if not FLAGS.DISTRIBUTED:
                 print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
