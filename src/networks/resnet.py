@@ -4,7 +4,7 @@ import sys
 
 print(sys.path)
 
-from . import utils
+from src import utils
 
 
 #####################################################################
@@ -138,7 +138,7 @@ class ResNet(torch.nn.Module):
 
         # We apply an initial convolution, to each plane, to get n_inital_filters
 
-        FLAGS = flags.FLAGS()
+        FLAGS = utils.flags.FLAGS()
 
         if FLAGS.SHARE_WEIGHTS:
             self.initial_convolution = conv5x5(1, FLAGS.N_INITIAL_FILTERS)
@@ -222,7 +222,7 @@ class ResNet(torch.nn.Module):
 
     def forward(self, x):
         
-        FLAGS = flags.FLAGS()
+        FLAGS = utils.flags.FLAGS()
 
         # Split the input into NPLANES streams
         x = [ _ for _ in torch.split(x, 1, dim=1)]

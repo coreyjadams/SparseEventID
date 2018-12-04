@@ -414,14 +414,17 @@ class trainercore(object):
         io_end_time = datetime.datetime.now()
 
         # Convert the input data to torch tensors
-        minibatch_data = {key : torch.Tensor(minibatch_data[key]) for key in minibatch_data }
-        
-        # if using cuda, copy the input data to GPU:
         if FLAGS.COMPUTE_MODE == "GPU":
-            for key in minibatch_data: minibatch_data[key].cuda()
+            device = torch.device('cuda')
+            minibatch_data = {key : torch.tensor(minibatch_data[key],device=device) for key in minibatch_data }
+        else:
+            minibatch_data = {key : torch.tensor(minibatch_data[key]) for key in minibatch_data }
+
+
 
         # Run a forward pass of the model on the input image:
         logits = self._net(minibatch_data['image'])
+
 
         # Compute the loss based on the logits
         loss = self._calculate_loss(minibatch_data, logits)

@@ -7,13 +7,12 @@ import numpy
 # Add the local folder to the import path:
 network_dir = os.path.dirname(os.path.abspath(__file__))
 network_dir = os.path.dirname(network_dir)
-sys.path.insert(0,network_dir+'/src/')
+sys.path.insert(0,network_dir)
 
-print(sys.path)
 
 # import the necessary
-from utils import flags
-from networks import resnet
+from src.utils import flags
+from src.networks import resnet
 
 
 def main():
@@ -31,15 +30,15 @@ def main():
         raise Exception()
 
     if FLAGS.DISTRIBUTED:
-        from utils import distributed_trainer
+        from src.utils import distributed_trainer
 
         trainer = distributed_trainer.distributed_trainer()
     else:
-        from utils import trainercore
+        from src.utils import trainercore
         trainer = trainercore.trainercore()
         
     if FLAGS.MODE == 'train':
-        net = resnet.resnet
+        net = resnet.ResNet
         FLAGS.set_net(net)
         trainer.initialize()
         trainer.batch_process()

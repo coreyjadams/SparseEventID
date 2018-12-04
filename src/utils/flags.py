@@ -1,8 +1,8 @@
 import argparse
 
 import os,sys
-# top_dir = os.path.dirname(os.path.abspath(__file__))
-# top_dir = os.path.dirname(top_dir)
+top_dir = os.path.dirname(os.path.abspath(__file__))
+top_dir = os.path.dirname(top_dir)
 
 '''
 This script is heavily inspired by the following code from drinkingkazu:
@@ -76,6 +76,8 @@ class FLAGS(Borg):
         self.LOG_DIRECTORY         = './log'
 
         self.DISTRIBUTED           = False
+
+        self.IMAGE_MODE            = 'dense' # Can also be 'sparse'
 
         # IO parameters  
         # IO has a 'default' file configuration and an optional
@@ -213,8 +215,11 @@ class FLAGS(Borg):
 
         parser.add_argument('-d','--distributed', action='store_true', default=self.DISTRIBUTED,
             help="Run with the MPI compatible mode [default: {}]".format(self.DISTRIBUTED))
-        parser.add_argument('-m','--compute_mode', type=str, choices=['CPU','GPU'], default=self.COMPUTE_MODE,
+        parser.add_argument('-m','--compute-mode', type=str, choices=['CPU','GPU'], default=self.COMPUTE_MODE,
             help="Selection of compute device, CPU or GPU  [default: {}]".format(self.COMPUTE_MODE))
+        parser.add_argument('-im','--image-mode',type=str,choices=['dense', 'sparse'],default=self.IMAGE_MODE,
+            help="Input image format to the network, dense or sparse [default: {}]".format(self.IMAGE_MODE))
+
 
         return parser
 
@@ -317,33 +322,52 @@ class resnet(FLAGS):
 
         return parser
 
-# class sparseresnet(FLAGS):
-#     '''FLAGS for a sparse residual network
-    
-    
-#     Extends:
-#         FLAGS
-#     '''
+class sparseresnet(FLAGS):
+    ''' Sparse Resnet specific flags
+    '''
 
-#     def __init__(self):
-#         FLAGS.__init__(self)
-
-#     # # # Parameters to control the network implementation
-#     # # BATCH_NORM            = True
-#     # # USE_BIAS              = True
-#     # # # Options are "resnet", "pointnet", "sparseresnet"
-#     # # MODEL                 = 'resnet'
-#     # # DIMENSIONS            = 2
+    def __init__(self):
+        FLAGS.__init__(self)
 
 
-#     #     train_parser.add_argument('-rw','--regularize-weights', type=float, default=cls.REGULARIZE_WEIGHTS,
-#     #         help="Regularization strength for all learned weights [default: {}]".format(cls.REGULARIZE_WEIGHTS))
-#     #     train_parser.add_argument('-rt','--regularize-transforms', type=str2bool, default=cls.REGULARIZE_TRANSFORMS,
-#     #         help="Regularization strength for transformations [default: {}]".format(cls.REGULARIZE_TRANSFORMS))
+    def set_net(self, net):
+        # For the resnet object, we set the network as resnet:
+        self._net = net
+
+
+    def _set_defaults(self):
+
+        self.VERBOSITY                  = 0
+        self.N_INITIAL_FILTERS          = 5
+        self.RES_BLOCKS_PER_LAYER       = 2
+        self.NETWORK_DEPTH_PRE_MERGE    = 3
+        self.NETWORK_DEPTH_POST_MERGE   = 3
+        self.NPLANES                    = 3
+        self.SHARE_WEIGHTS              = True
+
+        FLAGS._set_defaults(self)
+
+    def _add_default_network_configuration(self, parser):
 
 
 
+        parser.add_argument('-v', '--verbosity', type=int,default=self.VERBOSITY,
+            help="Network verbosity at construction [default: {}]".format(self.VERBOSITY))
 
-#     # # # Parameters controlling regularization
-#     # # REGULARIZE_WEIGHTS    = 0.001
-#     # # REGULARIZE_TRANSFORMS = 0.0001
+
+        parser.add_argument('--n-initial-filters', type=int, default=self.N_INITIAL_FILTERS,
+            help="Number of filters applied, per plane, for the initial convolution [default: {}]".format(self.N_INITIAL_FILTERS))
+        parser.add_argument('--res-blocks-per-layer', type=int, default=self.RES_BLOCKS_PER_LAYER,
+            help="Number of residual blocks per layer [default: {}]".format(self.RES_BLOCKS_PER_LAYER))
+        parser.add_argument('--network-depth-pre-merge', type=int, default=self.NETWORK_DEPTH_PRE_MERGE,
+            help="Total number of downsamples to apply before merging planes [default: {}]".format(self.NETWORK_DEPTH_PRE_MERGE))
+        parser.add_argument('--network-depth-post-merge', type=int, default=self.NETWORK_DEPTH_POST_MERGE,
+            help="Total number of downsamples to apply after merging planes [default: {}]".format(self.NETWORK_DEPTH_POST_MERGE))
+        parser.add_argument('--nplanes', type=int, default=self.NPLANES,
+            help="Number of planes to split the initial image into [default: {}]".format(self.NPLANES))
+        parser.add_argument('--share-weights', type=str2bool, default=self.SHARE_WEIGHTS,
+            help="Whether or not to share weights across planes [default: {}]".format(self.SHARE_WEIGHTS))
+
+
+
+        return parser
