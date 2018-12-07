@@ -150,8 +150,12 @@ class trainercore(object):
         if FLAGS.COMPUTE_MODE == "GPU":
             self._net.cuda()
 
-
-        self._log_keys = ['loss', 'accuracy']
+        if FLAGS.LABEL_MODE == 'all':
+            self._log_keys = ['loss', 'accuracy']
+        elif FLAGS.LABEL_MODE == 'split':
+            self._log_keys = ['loss']
+            for key in FLAGS.KEYWORD_LABEL_SPLIT: 
+                self._log_keys.append('acc_{}'.format(key))
 
 
 
@@ -290,6 +294,15 @@ class trainercore(object):
             values, target = torch.max(inputs[FLAGS.KEYWORD_LABEL], dim = 1)
             loss = self._criterion(logits, target=target)
             return loss
+        elif FLAGS.LABEL_MODE == 'split':
+            loss = None
+            for key in logits:
+                values, target = torch.max(inputs[key], dim=1)
+                if loss is None:
+                    loss = self._criterion(logits[key], target=target)
+                else:
+                    loss += self._criterion(logits[key], target=target)
+            return loss
 
 
     def _calculate_accuracy(self, logits, minibatch_data):
@@ -299,45 +312,24 @@ class trainercore(object):
 
         # Compare how often the input label and the output prediction agree:
 
-        values, indices = torch.max(minibatch_data[FLAGS.KEYWORD_LABEL], dim = 1)
-        values, predict = torch.max(logits, dim=1)
-        correct_prediction = torch.eq(predict,indices)
-        accuracy = torch.mean(correct_prediction.float())
+        if FLAGS.LABEL_MODE == 'all':
+
+            values, indices = torch.max(minibatch_data[FLAGS.KEYWORD_LABEL], dim = 1)
+            values, predict = torch.max(logits, dim=1)
+            correct_prediction = torch.eq(predict,indices)
+            accuracy = torch.mean(correct_prediction.float())
+
+        elif FLAGS.LABEL_MODE == 'split':
+            accuracy = {}
+            for key in logits:
+
+                values, indices = torch.max(minibatch_data[key], dim = 1)
+                values, predict = torch.max(logits[key], dim=1)
+                correct_prediction = torch.eq(predict,indices)
+                accuracy[key] = torch.mean(correct_prediction.float())
 
         return accuracy
 
-
-
-
-    # def image_to_point_cloud(self, image):
-
-    #     # This function maps an image to a point cloud
-
-
-    #     # Have to do this image by image to get the right shape:
-    #     outputs = []
-    #     max_points= 0
-    #     for b in range(image.shape[0]):
-
-    #         non_zero_locs = list(numpy.where(image[b] != 0))
-    #         # Calculate the values and put them last:
-    #         values = image[b][tuple(non_zero_locs)]
-    #         if values.shape[0] > max_points:
-    #             max_points = values.shape[0]
-    #         # Merge everything into an N by 2 array:
-    #         non_zero_locs.append(values)
-    #         point_dim_len = len(non_zero_locs)
-    #         # Stack everythin together and take the transpose:
-    #         res = numpy.stack((non_zero_locs)).T
-    #         outputs.append(res)
-
-    #     # Stack the results into a uniform numpy array padded with zeros:
-    #     output = numpy.zeros([len(outputs), max_points, point_dim_len])
-    #     for i, o in enumerate(outputs):
-    #         npoints = len(o)
-    #         output[i,0:npoints,:] = o
-
-    #     return output
 
     def _compute_metrics(self, logits, minibatch_data, loss):
 
@@ -345,7 +337,12 @@ class trainercore(object):
         metrics = {}
 
         metrics['loss']     = loss.data
-        metrics['accuracy'] = self._calculate_accuracy(logits, minibatch_data)
+        accuracy = self._calculate_accuracy(logits, minibatch_data)
+        if FLAGS.LABEL_MODE == 'all':
+            metrics['accuracy'] = accuracy
+        elif FLAGS.LABEL_MODE == 'split':
+            for key in accuracy:
+                metrics['acc_{}'.format(key)] = accuracy[key]
 
         return metrics
 
@@ -438,13 +435,17 @@ class trainercore(object):
             for key in minibatch_data:
                 if key == 'image' and FLAGS.SPARSE:
                     if '3d' in FLAGS.FILE:
+
                         minibatch_data['image'] = (
-                            torch.tensor(v, device=device) for v in minibatch_data['image'])
+                                torch.tensor(minibatch_data['image'][0]).long(),
+                                torch.tensor(minibatch_data['image'][1], device=device),
+                                torch.tensor(minibatch_data['image'][2], device=device),
+                            )
                     else:
                         new_image = []
                         for p in range(len(minibatch_data['image'])):
                             new_tuple = (
-                                torch.tensor(minibatch_data['image'][p][0], device=device),
+                                torch.tensor(minibatch_data['image'][p][0], device=device).long(),
                                 torch.tensor(minibatch_data['image'][p][1], device=device),
                                 torch.tensor(minibatch_data['image'][p][2], device=device),
                                 )

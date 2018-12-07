@@ -38,7 +38,7 @@ def larcvsparse_to_scnsparse_3d(input_array):
     batch_index = non_zero_inds[0]
 
     # Getting the voxel values (features) is also straightforward:
-    features = split_tensors[-1][non_zero_inds]
+    features = numpy.expand_dims(split_tensors[-1][non_zero_inds],axis=-1)
 
     # Lastly, we need to stack up the coordinates, which we do here:
     dimension_list = []
@@ -49,7 +49,7 @@ def larcvsparse_to_scnsparse_3d(input_array):
     dimension_list.append(batch_index)
 
     # And stack this into one numpy array:
-    dimension = numpy.vstack(dimension_list)
+    dimension = numpy.stack(dimension_list, axis=-1)
 
     output_array = (dimension, features, batch_size,)
     return output_array
@@ -88,10 +88,13 @@ def larcvsparse_to_scnsparse_2d(input_array):
 
         batch = non_zero_locs[0]
 
-        dimension = numpy.vstack([x,y,batch])
+        # dimension = numpy.concatenate([x,y,batch], axis=0)
+        # dimension = numpy.stack([x,y,batch], axis=-1)
+        dimension = numpy.stack([x,y], axis=-1)
+
 
         output_list.append(
-            (dimension, val, batch_size)
+            (dimension, val)
             )
 
 
@@ -115,8 +118,10 @@ def larcvdense_to_scnsparse_3d(input_array):
     batch_size  = input_array.shape[0]
 
     # And stack this into one numpy array:
-    dimension = numpy.vstack([x,y,z,batch])
+    dimension = numpy.stack([x,y,z,batch], axis=-1)
 
     output_array = (dimension, features, batch_size)
 
     return output_array
+
+

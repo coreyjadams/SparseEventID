@@ -130,7 +130,7 @@ class ResNet(torch.nn.Module):
 
 
         # Create the sparse input tensor:
-        self.input_tensor = scn.InputLayer(dimension=2, spatial_size=512, mode=0)
+        self.input_tensor = scn.InputLayer(dimension=2, spatial_size=512)
 
 
         # Here, define the layers we will need in the forward path:
@@ -156,14 +156,6 @@ class ResNet(torch.nn.Module):
 
         n_filters = FLAGS.N_INITIAL_FILTERS
         # Next, build out the convolution steps
-
-
-
-        self.RES_BLOCKS_PER_LAYER       = 2
-        self.NETWORK_DEPTH_PRE_MERGE    = 3
-        self.NETWORK_DEPTH_POST_MERGE   = 3
-        self.NPLANES                    = 3
-        self.SHARE_WEIGHTS              = True
 
 
         self.pre_convolutional_layers = []
@@ -234,8 +226,11 @@ class ResNet(torch.nn.Module):
 
         for p in range(len(x)):
 
+            print(x[p][0].shape)
+            print(x[p][1].shape)
+            print(x[p][2].shape)
             # Convert to the right format:
-            x[p] = self.input_tensor(x[p])
+            x[p] = self.input_tensor((x[p][0], x[p][1] ) )
 
             # Apply all of the forward layers:
             if FLAGS.SHARE_WEIGHTS:

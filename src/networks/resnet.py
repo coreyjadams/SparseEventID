@@ -1,8 +1,6 @@
 import torch
 import torch.nn as nn
-import sys
 
-print(sys.path)
 
 from src import utils
 
@@ -152,14 +150,6 @@ class ResNet(torch.nn.Module):
 
         n_filters = FLAGS.N_INITIAL_FILTERS
         # Next, build out the convolution steps
-
-
-
-        self.RES_BLOCKS_PER_LAYER       = 2
-        self.NETWORK_DEPTH_PRE_MERGE    = 3
-        self.NETWORK_DEPTH_POST_MERGE   = 3
-        self.NPLANES                    = 3
-        self.SHARE_WEIGHTS              = True
 
 
         self.pre_convolutional_layers = []
