@@ -5,17 +5,21 @@ from collections import OrderedDict
 
 import numpy
 
-import tensorflow as tf
-
-import horovod.tensorflow as hvd
+import torch
+import horovod.torch as hvd
 hvd.init()
+
 
 from larcv.distributed_larcv_interface import larcv_interface
 
-from . flags import FLAGS
+
+from . import flags
+# from . import data_transforms
+FLAGS = flags.FLAGS()
 
 from .trainercore import trainercore
 
+import tensorboardX
 
 class distributed_trainer(trainercore):
     '''
@@ -31,6 +35,10 @@ class distributed_trainer(trainercore):
         # Put the IO rank as the last rank in the COMM, since rank 0 does tf saves
         root_rank = hvd.size() - 1 
 
+        if FLAGS.COMPUTE_MODE == "GPU":
+            os.environ['CUDA_VISIBLE_DEVICES'] = str(hvd.local_rank())
+            
+
         self._larcv_interface = larcv_interface(root=root_rank)
         self._iteration       = 0
         self._rank            = hvd.rank()
@@ -39,126 +47,128 @@ class distributed_trainer(trainercore):
         # Make sure that 'LEARNING_RATE' and 'TRAINING'
         # are in net network parameters:
 
-        self._initialize()
 
 
 
 
     def initialize(self, io_only = False):
 
-        tf.logging.info("HVD rank: {}".format(hvd.rank()))
-
-
-        # Verify the network object is set:
-        if not hasattr(self, '_net'):
-            raise Exception("Must set network object by calling set_network_object() before initialize")
-
+        print("HVD rank: {}".format(hvd.rank()))
 
         self._initialize_io()
+
 
         if io_only:
             return
 
-        self._construct_graph()
+        dims = self._larcv_interface.fetch_minibatch_dims('primary')
+
+        # This sets up the necessary output shape:
+        if FLAGS.LABEL_MODE == 'split':
+            output_shape = { key : dims[key] for key in FLAGS.KEYWORD_LABEL}
+        else:
+            output_shape = dims[FLAGS.KEYWORD_LABEL]
+
+
+        self._net = FLAGS._net(output_shape)
+
+
+        if FLAGS.TRAINING: 
+            self._net.train(True)
+
+
+
+        if hvd.rank() == 0:
+            n_trainable_parameters = 0
+            for var in self._net.parameters():
+                n_trainable_parameters += numpy.prod(var.shape)
+            print("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
+
 
         # Create an optimizer:
         if FLAGS.LEARNING_RATE <= 0:
-            opt = tf.train.AdagradOptimizer()
+            self._opt = torch.optim.Adam(self._net.parameters())
         else:
-            opt = tf.train.AdagradOptimizer(FLAGS.LEARNING_RATE*hvd.size())
+            self._opt = torch.optim.Adam(self._net.parameters(), FLAGS.LEARNING_RATE)
 
-        with tf.variable_scope("hvd"):
-            opt = hvd.DistributedOptimizer(opt)
-        
-            self._global_step = tf.train.get_or_create_global_step()
-            self._train_op = opt.minimize(self._loss, self._global_step)
+        self._opt = hvd.DistributedOptimizer(self._opt, named_parameters=self._net.named_parameters())
 
-        hooks = self.get_distributed_hooks()
-        
 
-        config = tf.ConfigProto()
+        # self._train_op = opt.minimize(self._loss, self._global_step)
+        self._criterion = torch.nn.CrossEntropyLoss()
+
+        # hooks = self.get_standard_hooks()
+
+
+        # This sets up the summary saver:
+        if hvd.rank() == 0:
+            self._saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY)
+        else:
+            self._saver = None
+        # This code is supposed to add the graph definition.
+        # It doesn't currently work
+        # temp_dims = list(dims['image'])
+        # temp_dims[0] = 1
+        # dummy_input = torch.randn(size=tuple(temp_dims), requires_grad=True)
+        # self._saver.add_graph(self._net, (dummy_input,))
+
+        # Here, either restore the weights of the network or initialize it:
+        self._global_step = 0
+        # Restore the state from the root rank:
+        if hvd.rank() == 0:
+            self.restore_model()
+
+        # Broadcast the state of the model:
+        hvd.broadcast_parameters(self._net.state_dict(), root_rank = 0)
 
         if FLAGS.COMPUTE_MODE == "CPU":
-            config.inter_op_parallelism_threads = 2
-            config.intra_op_parallelism_threads = 128
+            pass
         if FLAGS.COMPUTE_MODE == "GPU":
-            config.gpu_options.allow_growth = True
-            config.gpu_options.visible_device_list = str(hvd.local_rank())
+            self._net.cuda()
 
-            tf.logging.info("Global rank {}, Local horovod rank: {}".format(hvd.rank(), hvd.local_rank()))
+        print("Rank ", hvd.rank(), next(self._net.parameters()).device)
 
+        if FLAGS.LABEL_MODE == 'all':
+            self._log_keys = ['loss', 'accuracy']
+        elif FLAGS.LABEL_MODE == 'split':
+            self._log_keys = ['loss']
+            for key in FLAGS.KEYWORD_LABEL_SPLIT: 
+                self._log_keys.append('acc_{}'.format(key))
+
+
+
+
+
+    def summary(self, metrics):
         if hvd.rank() == 0:
-            self._sess = tf.train.MonitoredTrainingSession(config=config, hooks = hooks,
-                checkpoint_dir= "{}/checkpoints/".format(FLAGS.LOG_DIRECTORY),
-                save_checkpoint_steps=FLAGS.CHECKPOINT_ITERATION
-            )
+            trainercore.summary(self, metrics)
+        return
+        
+    def _compute_metrics(self, logits, minibatch_data, loss):
+        # This function calls the parent function which computes local metrics.
+        # Then, it performs an all reduce on all metrics:
+        metrics = trainercore._compute_metrics(self, logits, minibatch_data, loss)
 
+
+        for key in metrics:
+            # print("All reducing ", key)
+            metrics[key] = hvd.allreduce(metrics[key], name = key)
+
+        return metrics
+
+    def to_torch(self, minibatch_data):
+
+        # This function wraps the to-torch function but for a gpu forces
+        # the right device
+        if FLAGS.COMPUTE_MODE == 'GPU':
+            device = torch.device('cuda')
+            # device = torch.device('cuda:{}'.format(hvd.local_rank()))
         else:
-            self._sess = tf.train.MonitoredTrainingSession(config=config, hooks = hooks)
+            device = None
+        minibatch_data = trainercore.to_torch(self, minibatch_data, device)
 
-    def get_distributed_hooks(self):
+        return minibatch_data
 
+    def log(self, metrics):
         if hvd.rank() == 0:
-
-            checkpoint_dir = FLAGS.LOG_DIRECTORY
-
-            loss_is_nan_hook = tf.train.NanTensorHook(
-                self._loss,
-                fail_on_nan_loss=True,
-            )
-
-            # Create a hook to manage the summary saving:
-            summary_saver_hook = tf.train.SummarySaverHook(
-                save_steps = FLAGS.SUMMARY_ITERATION,
-                output_dir = checkpoint_dir,
-                summary_op = tf.summary.merge_all()
-                )
-
-            
-            # Create a profiling hook for tracing:
-            profile_hook = tf.train.ProfilerHook(
-                save_steps    = FLAGS.PROFILE_ITERATION,
-                output_dir    = checkpoint_dir,
-                show_dataflow = True,
-                show_memory   = True
-            )
-
-            logging_hook = tf.train.LoggingTensorHook(
-                tensors       = { 'global_step' : self._global_step,
-                                  'accuracy'    : self._accuracy, 
-                                  'loss'        : self._loss},
-                every_n_iter  = FLAGS.LOGGING_ITERATION,
-                )
-
-            hooks = [
-                hvd.BroadcastGlobalVariablesHook(0),
-                loss_is_nan_hook,
-                summary_saver_hook,
-                profile_hook,
-                logging_hook,
-            ]
-
-        else:
-            hooks = [
-                hvd.BroadcastGlobalVariablesHook(0),
-            ]
-
-        return hooks
-
-    def train_step(self):
-
-
-        minibatch_data = self.fetch_next_batch()
-
-        self._sess.run(self._train_op, 
-                       feed_dict = self.feed_dict(inputs = minibatch_data))
-
-
-
-
-        # tf.logging.info("Rank {} loss: {}".format(hvd.rank(), loss))
-        # tf.logging.info("Rank {} loss: {}".format(hvd.rank(), logits))
-
-
-
-
+            trainercore.log(self, metrics)

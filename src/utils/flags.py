@@ -354,7 +354,6 @@ class resnet3D(FLAGS):
 
     def _add_default_network_configuration(self, parser):
 
-        print("Called")
 
         parser.add_argument('-v', '--verbosity', type=int,default=self.VERBOSITY,
             help="Network verbosity at construction [default: {}]".format(self.VERBOSITY))

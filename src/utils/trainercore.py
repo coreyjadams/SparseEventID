@@ -183,6 +183,13 @@ class trainercore(object):
         self._opt.load_state_dict(state['optimizer'])
         self._global_step = state['global_step']
 
+        # If using GPUs, move the model to GPU:
+        if FLAGS.COMPUTE_MODE == "GPU":
+            for state in self._opt.state.values():
+                for k, v in state.items():
+                    if torch.is_tensor(v):
+                        state[k] = v.cuda()
+
         return
 
     def save_model(self):
@@ -196,7 +203,7 @@ class trainercore(object):
         state_dict = {
             'global_step' : self._global_step,
             'state_dict'  : self._net.state_dict(),
-            'optimizer'   : self._opt.state_dict()
+            'optimizer'   : self._opt.state_dict(),
         }
 
         # Make sure the path actually exists:
@@ -355,12 +362,13 @@ class trainercore(object):
 
             # Build up a string for logging:
             if self._log_keys != []:
-                s = ", ".join(["{0}: {1:.4}".format(key, metrics[key]) for key in self._log_keys])
+                s = ", ".join(["{0}: {1:.3}".format(key, metrics[key]) for key in self._log_keys])
             else:
-                s = ", ".join(["{0}: {1:.4}".format(key, metrics[key]) for key in metrics])
+                s = ", ".join(["{0}: {1:.3}".format(key, metrics[key]) for key in metrics])
       
+
             try:
-                s += " ({} s)".format((self._current_log_time - self._previous_log_time).total_seconds())
+                s += " ({:.2}s / {:.2} IOs)".format((self._current_log_time - self._previous_log_time).total_seconds(), metrics['io_fetch_time'])
             except:
                 pass
 
@@ -412,6 +420,42 @@ class trainercore(object):
 
         self._global_step += 1
 
+    def to_torch(self, minibatch_data, device=None):
+
+        # Convert the input data to torch tensors
+        if FLAGS.COMPUTE_MODE == "GPU":
+            if device is None:
+                device = torch.device('cuda')
+            # print(device)
+
+        else:
+            if device is None:
+                device = torch.device('cpu')
+
+
+        for key in minibatch_data:
+            if key == 'image' and FLAGS.SPARSE:
+                if '3d' in FLAGS.FILE:
+                    minibatch_data['image'] = (
+                            torch.tensor(minibatch_data['image'][0]).long(),
+                            torch.tensor(minibatch_data['image'][1], device=device),
+                            torch.tensor(minibatch_data['image'][2], device=device),
+                        )
+                else:
+                    new_image = []
+                    for p in range(len(minibatch_data['image'])):
+                        new_tuple = (
+                            torch.tensor(minibatch_data['image'][p][0]).long(),
+                            torch.tensor(minibatch_data['image'][p][1], device=device),
+                            torch.tensor(minibatch_data['image'][p][2], device=device),
+                            )
+                        new_image.append(new_tuple)
+                    minibatch_data['image'] = new_image
+            else:
+                minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
+        
+        return minibatch_data
+
     def train_step(self):
 
 
@@ -429,67 +473,48 @@ class trainercore(object):
         minibatch_data = self.fetch_next_batch()
         io_end_time = datetime.datetime.now()
 
-        # Convert the input data to torch tensors
-        if FLAGS.COMPUTE_MODE == "GPU":
-            device = torch.device('cuda')
-            for key in minibatch_data:
-                if key == 'image' and FLAGS.SPARSE:
-                    if '3d' in FLAGS.FILE:
-
-                        minibatch_data['image'] = (
-                                torch.tensor(minibatch_data['image'][0]).long(),
-                                torch.tensor(minibatch_data['image'][1], device=device),
-                                torch.tensor(minibatch_data['image'][2], device=device),
-                            )
-                    else:
-                        new_image = []
-                        for p in range(len(minibatch_data['image'])):
-                            new_tuple = (
-                                torch.tensor(minibatch_data['image'][p][0], device=device).long(),
-                                torch.tensor(minibatch_data['image'][p][1], device=device),
-                                torch.tensor(minibatch_data['image'][p][2], device=device),
-                                )
-                            new_image.append(new_tuple)
-                        minibatch_data['image'] = new_image
-                else:
-                    minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
-        else:
-            for key in minibatch_data:
-                if key == 'image' and FLAGS.SPARSE:
-                    minibatch_data['image'][0] = torch.tensor(minibatch_data['image'][0])
-                minibatch_data[key] = torch.tensor(minibatch_data[key])
-
-
+        minibatch_data = self.to_torch(minibatch_data)
 
         # Run a forward pass of the model on the input image:
         logits = self._net(minibatch_data['image'])
 
-
+        # print("Completed Forward pass")
         # Compute the loss based on the logits
         loss = self._calculate_loss(minibatch_data, logits)
+        # print("Completed loss")
 
         # Compute the gradients for the network parameters:
         loss.backward()
+        # print("Completed backward pass")
 
         # Compute any necessary metrics:
         metrics = self._compute_metrics(logits, minibatch_data, loss)
         
-        self.log(metrics) 
+
 
         # Add the global step / second to the tensorboard log:
         try:
-            metrics['global_step/sec'] = self._global_step_per_second
+            metrics['global_step/sec'] = 1./self._global_step_per_second
         except:
             metrics['global_step/sec'] = 0.0
 
         metrics['io_fetch_time'] = (io_end_time - io_start_time).total_seconds()
 
 
+        # print("Calculated metrics")
+
+        self.log(metrics) 
+
+        # print("Completed Log")
 
         self.summary(metrics)       
 
+        # print("Summarized")
+
+
         # Apply the parameter update:
         self._opt.step()
+        # print("Updated Weights")
         global_end_time = datetime.datetime.now()
 
         # Compute global step per second:
@@ -504,39 +529,36 @@ class trainercore(object):
         # perform a validation step
         # Validation steps can optionally accumulate over several minibatches, to
         # fit onto a gpu or other accelerator
+        if self._global_step % FLAGS.LOGGING_ITERATION == 0:
 
-        total_metrics = {}
-        for iteration in range(n_iterations):
+            total_metrics = {}
+            for iteration in range(n_iterations):
 
-            # Fetch the next batch of data with larcv
-            # (Make sure to pull from the validation set)
-            minibatch_data = self.fetch_next_batch('aux')        
+                # Fetch the next batch of data with larcv
+                # (Make sure to pull from the validation set)
+                minibatch_data = self.fetch_next_batch('aux')        
 
-            # Convert the input data to torch tensors
-            minibatch_data = {key : torch.Tensor(minibatch_data[key]) for key in minibatch_data }
-            
-            # if using cuda, copy the input data to GPU:
-            if FLAGS.COMPUTE_MODE == "GPU":
-                for key in minibatch_data: minibatch_data[key].cuda()
+                # Convert the input data to torch tensors
+                minibatch_data = self.to_torch(minibatch_data)
+                
+                # Run a forward pass of the model on the input image:
+                logits = self._net(minibatch_data['image'])
 
-            # Run a forward pass of the model on the input image:
-            logits = self._net(minibatch_data['image'])
-
-            # Compute the metrics for this iteration:
-            metrics = self._compute_metrics()
+                # Compute the metrics for this iteration:
+                metrics = self._compute_metrics(logits, minibatch_data, loss)
 
 
-            # Add them to the total metrics for this validation step:
-            if total_metrics == {}:
-                total_metrics = metrics
-            else:
-                total_metrics = { total_metrics[key] + metrics[key] for key in metrics}
+                # Add them to the total metrics for this validation step:
+                if total_metrics == {}:
+                    total_metrics = metrics
+                else:
+                    total_metrics = { total_metrics[key] + metrics[key] for key in metrics}
 
 
-        # Average metrics over the total number of iterations:
-        total_metrics = { total_metrics[key] / n_iterations for key in metrics}
+            # Average metrics over the total number of iterations:
+            total_metrics = { total_metrics[key] / n_iterations for key in metrics}
 
-        return metrics
+            return metrics
 
 
     def stop(self):
@@ -571,5 +593,6 @@ class trainercore(object):
 
             self.checkpoint()
 
-        self._saver.close()
+        if self._saver is not None:
+            self._saver.close()
 
