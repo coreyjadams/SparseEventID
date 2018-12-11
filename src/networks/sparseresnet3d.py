@@ -8,22 +8,22 @@ from src import utils
 #####################################################################
 # This code is copied from torch/vision/resnet.py:
 
-def sparse_conv3x3(in_planes, out_planes, stride=1):
-    """3x3 convolution with padding"""
-    return scn.SubmanifoldConvolution(3, in_planes, out_planes, filter_size=3, bias=False)
+# def sparse_submanifold_conv3x3(in_planes, out_planes, stride=1):
+#     """3x3 convolution with padding"""
+#     return scn.SubmanifoldConvolution(3, in_planes, out_planes, filter_size=3, bias=False)
 
-def sparse_conv1x1(in_planes, out_planes, stride=1):
-    """1x1 convolution"""
-    return scn.SubmanifoldConvolution(3, in_planes, out_planes, filter_size=1, bias=False)
+# def sparse_conv1x1(in_planes, out_planes, stride=1):
+#     """1x1 convolution"""
+#     return scn.SubmanifoldConvolution(3, in_planes, out_planes, filter_size=1, bias=False)
 
-def sparse_conv5x5(in_planes, out_planes, stride=1):
-    """5x5 convolution with padding"""
-    return scn.SubmanifoldConvolution(3, in_planes, out_planes, filter_size=5, bias=False)
+# def sparse_conv5x5(in_planes, out_planes, stride=1):
+#     """5x5 convolution with padding"""
+#     return scn.SubmanifoldConvolution(3, in_planes, out_planes, filter_size=5, bias=False)
 
 
 # def conv3x3(in_planes, out_planes, stride=1):
 #     """3x3 convolution with padding"""
-#     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+#     return scn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
 #                      padding=1, bias=False)
 
 def conv1x1(in_planes, out_planes, stride=1):
@@ -40,28 +40,40 @@ def conv1x1(in_planes, out_planes, stride=1):
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, downsample=None):
+    def __init__(self, inplanes, outplanes, stride):
         super(BasicBlock, self).__init__()
-        self.conv1 = sparse_conv3x3(inplanes, planes)
-        self.bn1 = scn.BatchNormalization(planes)
-        self.relu = scn.ReLU()
-        # self.conv2 = sparse_conv3x3(planes, planes)
-        # self.bn2 = scn.BatchNormalization(planes)
-        # self.downsample = downsample
-        # self.stride = stride
+        if stride == 1:
+            self.conv1 = scn.SubmanifoldConvolution(dimension=3, 
+                nIn=inplanes, nOut=outplanes, filter_size=2, bias=False)
+        else:
+            self.conv1 = scn.Convolution(dimension=3, 
+                nIn=inplanes, nOut=outplanes, filter_size=2, filter_stride=stride, bias=False)
+        self.bn1 = scn.BatchNormReLU(outplanes)
+        self.conv2 = scn.SubmanifoldConvolution(dimension=3, 
+                nIn=outplanes, nOut=outplanes, filter_size=2, bias=False)
+        self.bn2 = scn.BatchNormalization(outplanes)
+        if stride == 1:
+            self.residual = scn.Identity()
+        else:
+            self.residual = scn.Convolution(dimension=3, 
+                nIn=inplanes, nOut=outplanes, filter_size=2, filter_stride=stride, bias=False)
+
+        self.add = scn.AddTable()
 
     def forward(self, x):
-        # residual = x
+
+        residual = self.residual(x)
 
         out = self.conv1(x)
         out = self.bn1(out)
-        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
 
-        # out = self.conv2(out)
-        # out = self.bn2(out)
+        # The addition of sparse tensors is not straightforward, since
+        # the may not share active sites.
+        # Instead, concatenate the tables, then add the tables:
 
-        # # if self.downsample is not None:
-        # #     residual = self.downsample(x)
+        out = self.add([out, residual])
 
         # # out += residual
         # out = self.relu(out)
@@ -119,34 +131,18 @@ class BlockSeries(torch.nn.Module):
     def __init__(self, inplanes, outplanes, n_blocks):
         torch.nn.Module.__init__(self)
 
-        downsample = scn.Sequential(
-                sparse_conv1x1(inplanes, outplanes, 2),
-                scn.BatchNormalization(outplanes),
-            )
-        self.block1 = BasicBlock(inplanes, inplanes)
-        self.block2 = BasicBlock(inplanes, inplanes)
-        self.block3 = BasicBlock(inplanes, inplanes)
-        self.block4 = BasicBlock(inplanes, outplanes)
 
-        # Apply a max pooling:
-        self.pool   = scn.MaxPooling(dimension=3,pool_size=2, pool_stride=2)
+        self.blocks = [ BasicBlock(inplanes, inplanes, stride=1) for i in range(n_blocks-1) ]
+        self.blocks.append(BasicBlock(inplanes, outplanes, stride=2))
 
-        # self.blocks = [ BasicBlock(inplanes, inplanes) for i in range(n_blocks-1) ]
-        # self.blocks.append(BasicBlock(inplanes, outplanes, stride=2, downsample=downsample))
-
-        # for i, block in enumerate(self.blocks):
-        #     self.add_module('block_{}'.format(i), block)
+        for i, block in enumerate(self.blocks):
+            self.add_module('block_{}'.format(i), block)
 
 
     def forward(self, x):
-        # for i in range(len(self.blocks)):
-        #     x = self.blocks[i](x)
-
-        x = self.block1(x)
-        x = self.block2(x)
-        x = self.block3(x)
-        x = self.block4(x)
-        x = self.pool(x)
+        
+        for i in range(len(self.blocks)):
+            x = self.blocks[i](x)
 
         return x
 
@@ -172,8 +168,7 @@ class ResNet(torch.nn.Module):
         # We apply an initial convolution, to each plane, to get n_inital_filters
 
         FLAGS = utils.flags.FLAGS()
-
-        self.initial_convolution = sparse_conv5x5(1, FLAGS.N_INITIAL_FILTERS)
+        self.initial_convolution = scn.SubmanifoldConvolution(3, 1, FLAGS.N_INITIAL_FILTERS, filter_size=5, bias=False)
 
         n_filters = FLAGS.N_INITIAL_FILTERS
         # Next, build out the convolution steps
@@ -184,8 +179,8 @@ class ResNet(torch.nn.Module):
         self.convolutional_layers = []
         for layer in range(FLAGS.NETWORK_DEPTH):
 
-            self.convolutional_layers.append(BlockSeries(n_filters, 2*n_filters, FLAGS.RES_BLOCKS_PER_LAYER))
-            n_filters *= 2
+            self.convolutional_layers.append(BlockSeries(n_filters, n_filters + FLAGS.N_INITIAL_FILTERS, FLAGS.RES_BLOCKS_PER_LAYER))
+            n_filters += FLAGS.N_INITIAL_FILTERS
             self.add_module("conv_{}".format(layer), self.convolutional_layers[-1])
 
         # Here, take the final output and convert to a dense tensor:
