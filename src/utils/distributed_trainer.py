@@ -48,7 +48,11 @@ class distributed_trainer(trainercore):
         # are in net network parameters:
 
 
+    def save_model(self):
 
+        if hvd.rank() == 0:
+            trainercore.save_model(self)
+            
 
 
     def initialize(self, io_only = False):
@@ -139,9 +143,9 @@ class distributed_trainer(trainercore):
 
 
 
-    def summary(self, metrics):
+    def summary(self, metrics, level=""):
         if hvd.rank() == 0:
-            trainercore.summary(self, metrics)
+            trainercore.summary(self, metrics, level)
         return
         
     def _compute_metrics(self, logits, minibatch_data, loss):
@@ -169,6 +173,6 @@ class distributed_trainer(trainercore):
 
         return minibatch_data
 
-    def log(self, metrics):
+    def log(self, metrics, level=""):
         if hvd.rank() == 0:
-            trainercore.log(self, metrics)
+            trainercore.log(self, metrics, level)

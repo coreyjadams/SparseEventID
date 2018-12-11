@@ -94,6 +94,8 @@ class trainercore(object):
 
         dims = self._larcv_interface.fetch_minibatch_dims('primary')
 
+
+
         # This sets up the necessary output shape:
         if FLAGS.LABEL_MODE == 'split':
             output_shape = { key : dims[key] for key in FLAGS.KEYWORD_LABEL}
@@ -353,7 +355,7 @@ class trainercore(object):
 
         return metrics
 
-    def log(self, metrics):
+    def log(self, metrics, level=''):
 
 
         if self._global_step % FLAGS.LOGGING_ITERATION == 0:
@@ -374,15 +376,20 @@ class trainercore(object):
 
             self._previous_log_time = self._current_log_time
 
-            print("Global Step {} metrics: {}".format(self._global_step, s))
+            print("{} Step {} metrics: {}".format(level, self._global_step, s))
 
 
 
-    def summary(self, metrics):
+    def summary(self, metrics,level=""):
 
         if self._global_step % FLAGS.SUMMARY_ITERATION == 0:
             for metric in metrics:
-                self._saver.add_scalar(metric, metrics[metric], self._global_step)
+                if level != "":
+                    name = metric + "/" + level
+                    # name = level + "/" + metric
+                else:
+                    name = metric
+                self._saver.add_scalar(name, metrics[metric], self._global_step)
 
             pass
 
@@ -394,6 +401,12 @@ class trainercore(object):
 
         for key in minibatch_data:
             minibatch_data[key] = numpy.reshape(minibatch_data[key], minibatch_dims[key])
+
+        # Strip off the primary/aux label in the keys:
+        for key in minibatch_data:
+            new_key = key.replace('aux_','')
+            minibatch_data[new_key] = minibatch_data.pop(key)            
+
 
         # Here, do some massaging to convert the input data to another format, if necessary:
         if FLAGS.IMAGE_MODE == 'dense' and not FLAGS.SPARSE:
@@ -503,11 +516,11 @@ class trainercore(object):
 
         # print("Calculated metrics")
 
-        self.log(metrics) 
+        self.log(metrics, level="train") 
 
         # print("Completed Log")
 
-        self.summary(metrics)       
+        self.summary(metrics, level="train")       
 
         # print("Summarized")
 
@@ -526,10 +539,17 @@ class trainercore(object):
         return metrics
 
     def val_step(self, n_iterations=1):
+
+        # First, validation only occurs on training:
+        if not FLAGS.TRAINING: return
+
+        # Second, validation can not occur without a validation dataloader.
+        if FLAGS.AUX_FILE is None: return
+
         # perform a validation step
         # Validation steps can optionally accumulate over several minibatches, to
         # fit onto a gpu or other accelerator
-        if self._global_step % FLAGS.LOGGING_ITERATION == 0:
+        if self._global_step % FLAGS.AUX_ITERATION == 0:
 
             total_metrics = {}
             for iteration in range(n_iterations):
@@ -538,11 +558,22 @@ class trainercore(object):
                 # (Make sure to pull from the validation set)
                 minibatch_data = self.fetch_next_batch('aux')        
 
+
                 # Convert the input data to torch tensors
                 minibatch_data = self.to_torch(minibatch_data)
                 
                 # Run a forward pass of the model on the input image:
                 logits = self._net(minibatch_data['image'])
+
+                # # Here, we have to map the logit keys to aux keys
+                # for key in logits.keys():
+                #     new_key = 'aux_' + key
+                #     logits[new_key] = logits.pop(key)
+
+
+
+                # Compute the loss
+                loss = self._calculate_loss(minibatch_data, logits)
 
                 # Compute the metrics for this iteration:
                 metrics = self._compute_metrics(logits, minibatch_data, loss)
@@ -557,6 +588,9 @@ class trainercore(object):
 
             # Average metrics over the total number of iterations:
             total_metrics = { total_metrics[key] / n_iterations for key in metrics}
+
+            self.log(metrics, level="test")
+            self.summary(metrics, level="test")
 
             return metrics
 
@@ -590,6 +624,8 @@ class trainercore(object):
 
             # Start IO thread for the next batch while we train the network
             self.train_step()
+
+            self.val_step()
 
             self.checkpoint()
 

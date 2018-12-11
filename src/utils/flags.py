@@ -68,7 +68,7 @@ class FLAGS(Borg):
         self.TRAINING              = True
         self.MINIBATCH_SIZE        = 2
         self.CHECKPOINT_ITERATION  = 100
-        self.SUMMARY_ITERATION     = 10
+        self.SUMMARY_ITERATION     = 1
         self.LOGGING_ITERATION     = 1
         self.LEARNING_RATE         = 0.01
         self.ITERATIONS            = 5000
@@ -108,14 +108,16 @@ class FLAGS(Borg):
         self.AUX_FILE                  = None
         self.AUX_FILLER                = 'TestIO'
         self.AUX_IO_VERBOSITY          = 3
-        self.AUX_KEYWORD_DATA          = 'data'
-        self.AUX_KEYWORD_LABEL         = 'label'
+        self.AUX_KEYWORD_DATA          = 'aux_data'
+        self.AUX_KEYWORD_LABEL         = 'aux_label'
         self.AUX_MINIBATCH_SIZE        = 10*self.MINIBATCH_SIZE
-    
+        self.AUX_ITERATION             = 10*self.SUMMARY_ITERATION
+
+
         # These are "background" parameters
         # And are meant to be copied to the 'KEYWORD_LABEL' area
-        self.AUX_KEYWORD_LABEL_ALL     = 'label'
-        self.AUX_KEYWORD_LABEL_SPLIT   = ['label_neut','label_cpi','label_npi','label_prot']
+        self.AUX_KEYWORD_LABEL_ALL     = 'aux_label'
+        self.AUX_KEYWORD_LABEL_SPLIT   = ['aux_label_neut','aux_label_cpi','aux_label_npi','aux_label_prot']
 
         self.AUX_KEYWORD_LABEL         = None
 
@@ -157,6 +159,9 @@ class FLAGS(Borg):
         parser.add_argument('--aux-keyword-label', type=str, default=self.AUX_KEYWORD_LABEL,
             help="Keyword for io label access [default: {}]".format(self.AUX_KEYWORD_LABEL))
 
+
+        parser.add_argument('--aux-iteration',type=int, default=self.AUX_ITERATION,
+            help="Iteration to run the aux operations [default: {}]".format(self.AUX_ITERATION))
 
         parser.add_argument('--aux-minibatch-size',type=int, default=self.AUX_MINIBATCH_SIZE,
             help="Number of images in the minibatch size [default: {}]".format(self.AUX_MINIBATCH_SIZE))
