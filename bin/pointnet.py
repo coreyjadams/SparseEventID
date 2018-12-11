@@ -15,7 +15,7 @@ from python.flags import FLAGS
 
 def main():
     FLAGS.parse_args()
-    FLAGS.dump_config()
+    # FLAGS.dump_config()
 
 
 

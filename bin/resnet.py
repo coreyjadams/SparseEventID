@@ -20,7 +20,7 @@ def main():
 
     FLAGS = flags.resnet()
     FLAGS.parse_args()
-    FLAGS.dump_config()
+    # FLAGS.dump_config()
 
     
 

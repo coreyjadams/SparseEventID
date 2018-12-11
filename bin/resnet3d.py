@@ -20,7 +20,7 @@ def main():
 
     FLAGS = flags.resnet3D()
     FLAGS.parse_args()
-    FLAGS.dump_config()
+    # FLAGS.dump_config()
 
     
 
@@ -50,7 +50,6 @@ def main():
     if FLAGS.MODE == 'iotest':
         trainer.initialize(io_only=True)
 
-        print("running")
         time.sleep(0.1)
         for i in range(FLAGS.ITERATIONS):
             start = time.time()
