@@ -110,7 +110,7 @@ class FLAGS(Borg):
         self.AUX_IO_VERBOSITY          = 3
         self.AUX_KEYWORD_DATA          = 'aux_data'
         self.AUX_KEYWORD_LABEL         = 'aux_label'
-        self.AUX_MINIBATCH_SIZE        = 10*self.MINIBATCH_SIZE
+        self.AUX_MINIBATCH_SIZE        = self.MINIBATCH_SIZE
         self.AUX_ITERATION             = 10*self.SUMMARY_ITERATION
 
 
