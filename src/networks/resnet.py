@@ -197,7 +197,7 @@ class ResNet(torch.nn.Module):
             self.bottleneck  = { key : conv1x1(n_filters, output_shape[key][-1]) for key in output_shape}
             for key in self.final_layer:
                 self.add_module("final_layer_{}".format(key), self.final_layer[key])
-                self.add_module("bottleneck_{}".format(key), self.final_layer[key])
+                self.add_module("bottleneck_{}".format(key), self.bottleneck[key])
 
 
         # The rest of the final operations (reshape, softmax) are computed in the forward pass
