@@ -125,6 +125,11 @@ class trainercore(object):
             self._opt = torch.optim.Adam(self._net.parameters(), FLAGS.LEARNING_RATE)
 
 
+        lambda_warmup = lambda epoch: 1.0 if epoch < 3 else hvd.size() if epoch < 30 else 0.1
+
+        self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self._opt, lambda_warmup, last_epoch=-1)
+
 
         # self._train_op = opt.minimize(self._loss, self._global_step)
         self._criterion = torch.nn.CrossEntropyLoss()
@@ -391,6 +396,9 @@ class trainercore(object):
                     name = metric
                 self._saver.add_scalar(name, metrics[metric], self._global_step)
 
+            # try to get the learning rate
+            # print self._lr_scheduler.get_lr()
+            self._saver.add_scalar("learning_rate", self._lr_scheduler.get_lr()[0], self._global_step)
             pass
 
     def fetch_next_batch(self, mode='primary'):
@@ -431,7 +439,15 @@ class trainercore(object):
 
     def increment_global_step(self):
 
+        previous_epoch = int(self._global_step * FLAGS.MINIBATCH_SIZE)
         self._global_step += 1
+        current_epoch = int(self._global_step * FLAGS.MINIBATCH_SIZE)
+
+        if previous_epoch != current_epoch:
+            self.on_epoch_end()
+
+    def on_epoch_end(self):
+        pass
 
     def to_torch(self, minibatch_data, device=None):
 
@@ -452,7 +468,7 @@ class trainercore(object):
                     minibatch_data['image'] = (
                             torch.tensor(minibatch_data['image'][0]).long(),
                             torch.tensor(minibatch_data['image'][1], device=device),
-                            torch.tensor(minibatch_data['image'][2], device=device),
+                            minibatch_data['image'][2],
                         )
                 else:
                     new_image = []
@@ -460,7 +476,7 @@ class trainercore(object):
                         new_tuple = (
                             torch.tensor(minibatch_data['image'][p][0]).long(),
                             torch.tensor(minibatch_data['image'][p][1], device=device),
-                            torch.tensor(minibatch_data['image'][p][2], device=device),
+                            minibatch_data['image'][p][2],
                             )
                         new_image.append(new_tuple)
                     minibatch_data['image'] = new_image
@@ -535,6 +551,8 @@ class trainercore(object):
 
         # Increment the global step value:
         self.increment_global_step()
+
+
 
         return metrics
 
@@ -612,7 +630,6 @@ class trainercore(object):
         self._epoch_size = self._larcv_interface.size('primary')
 
         # This is the 'master' function, so it controls a lot
-
 
 
         # Run iterations

@@ -95,6 +95,16 @@ class distributed_trainer(trainercore):
         else:
             self._opt = torch.optim.Adam(self._net.parameters(), FLAGS.LEARNING_RATE)
 
+
+        # Wrap the optimizer in a learning rate controller to ensure warmup and 
+        # decayed rate at the end.
+
+        lambda_warmup = lambda epoch: 1.0 if epoch < 3 else hvd.size() if epoch < 30 else 0.1
+
+        self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self._opt, lambda_warmup, last_epoch=-1)
+
+
         self._opt = hvd.DistributedOptimizer(self._opt, named_parameters=self._net.named_parameters())
 
 
@@ -159,6 +169,14 @@ class distributed_trainer(trainercore):
             metrics[key] = hvd.allreduce(metrics[key], name = key)
 
         return metrics
+
+    def on_epoch_end(self):
+        if hvd.rank() == 0:
+            print("Epoch end called")
+
+        self._lr_scheduler.step()
+        pass
+
 
     def to_torch(self, minibatch_data):
 
