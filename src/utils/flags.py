@@ -295,7 +295,7 @@ class resnet(FLAGS):
     def _set_defaults(self):
 
         self.VERBOSITY                  = 0
-        self.N_INITIAL_FILTERS          = 5
+        self.N_INITIAL_FILTERS          = 2
         self.RES_BLOCKS_PER_LAYER       = 2
         self.NETWORK_DEPTH_PRE_MERGE    = 3
         self.NETWORK_DEPTH_POST_MERGE   = 3
@@ -351,7 +351,7 @@ class resnet3D(FLAGS):
         self.VERBOSITY             = 0
         self.N_INITIAL_FILTERS     = 5
         self.RES_BLOCKS_PER_LAYER  = 2
-        self.NETWORK_DEPTH         = 3
+        self.NETWORK_DEPTH         = 5
 
         self.SPARSE                = False
 

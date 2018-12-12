@@ -83,18 +83,9 @@ class trainercore(object):
 
             self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys)
 
-
-    def initialize(self, io_only=False):
-
-        self._initialize_io()
-
-
-        if io_only:
-            return
+    def init_network(self):
 
         dims = self._larcv_interface.fetch_minibatch_dims('primary')
-
-
 
         # This sets up the necessary output shape:
         if FLAGS.LABEL_MODE == 'split':
@@ -109,14 +100,41 @@ class trainercore(object):
         if FLAGS.TRAINING: 
             self._net.train(True)
 
+    def initialize(self, io_only=False):
 
+        self._initialize_io()
+
+
+        if io_only:
+            return
+
+        self.init_network()
 
         n_trainable_parameters = 0
         for var in self._net.parameters():
             n_trainable_parameters += numpy.prod(var.shape)
         print("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
 
-        # self._construct_graph()
+        self.init_optimizer()
+
+        self.init_saver()
+
+
+
+        if FLAGS.COMPUTE_MODE == "CPU":
+            pass
+        if FLAGS.COMPUTE_MODE == "GPU":
+            self._net.cuda()
+
+        if FLAGS.LABEL_MODE == 'all':
+            self._log_keys = ['loss', 'accuracy']
+        elif FLAGS.LABEL_MODE == 'split':
+            self._log_keys = ['loss']
+            for key in FLAGS.KEYWORD_LABEL_SPLIT: 
+                self._log_keys.append('acc/{}'.format(key))
+
+
+    def init_optimizer(self):
 
         # Create an optimizer:
         if FLAGS.LEARNING_RATE <= 0:
@@ -131,15 +149,18 @@ class trainercore(object):
             self._opt, lambda_warmup, last_epoch=-1)
 
 
-        # self._train_op = opt.minimize(self._loss, self._global_step)
         self._criterion = torch.nn.CrossEntropyLoss()
 
-        # hooks = self.get_standard_hooks()
 
+    def init_saver(self):
 
         # This sets up the summary saver:
         self._saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY)
 
+        if FLAGS.AUX_FILE is not None and FLAGS.TRAINING:
+            self._aux_saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY + "/test/")
+        else:
+            self._aux_saver = None
         # This code is supposed to add the graph definition.
         # It doesn't currently work
         # temp_dims = list(dims['image'])
@@ -150,20 +171,6 @@ class trainercore(object):
         # Here, either restore the weights of the network or initialize it:
         self._global_step = 0
         self.restore_model()
-
-
-        if FLAGS.COMPUTE_MODE == "CPU":
-            pass
-        if FLAGS.COMPUTE_MODE == "GPU":
-            self._net.cuda()
-
-        if FLAGS.LABEL_MODE == 'all':
-            self._log_keys = ['loss', 'accuracy']
-        elif FLAGS.LABEL_MODE == 'split':
-            self._log_keys = ['loss']
-            for key in FLAGS.KEYWORD_LABEL_SPLIT: 
-                self._log_keys.append('acc_{}'.format(key))
-
 
 
     def restore_model(self):
@@ -356,11 +363,11 @@ class trainercore(object):
             metrics['accuracy'] = accuracy
         elif FLAGS.LABEL_MODE == 'split':
             for key in accuracy:
-                metrics['acc_{}'.format(key)] = accuracy[key]
+                metrics['acc/{}'.format(key)] = accuracy[key]
 
         return metrics
 
-    def log(self, metrics, level=''):
+    def log(self, metrics, saver=''):
 
 
         if self._global_step % FLAGS.LOGGING_ITERATION == 0:
@@ -381,20 +388,20 @@ class trainercore(object):
 
             self._previous_log_time = self._current_log_time
 
-            print("{} Step {} metrics: {}".format(level, self._global_step, s))
+            print("{} Step {} metrics: {}".format(saver, self._global_step, s))
 
 
 
-    def summary(self, metrics,level=""):
+    def summary(self, metrics,saver=""):
 
         if self._global_step % FLAGS.SUMMARY_ITERATION == 0:
             for metric in metrics:
-                if level != "":
-                    name = metric + "/" + level
-                    # name = level + "/" + metric
+                name = metric
+                if saver == "test":
+                    self._aux_saver.add_scalar(metric, metrics[metric], self._global_step)
                 else:
-                    name = metric
-                self._saver.add_scalar(name, metrics[metric], self._global_step)
+                    self._saver.add_scalar(metric, metrics[metric], self._global_step)
+
 
             # try to get the learning rate
             # print self._lr_scheduler.get_lr()
@@ -428,7 +435,11 @@ class trainercore(object):
                 minibatch_data['image'] = data_transforms.larcvdense_to_scnsparse_2d(minibatch_data['image'])
         elif FLAGS.IMAGE_MODE == 'sparse' and not FLAGS.SPARSE:
             # Need to convert sparse larcv into a dense numpy array:
-            minibatch_data['image'] = data_transforms.larcvsparse_to_dense(minibatch_data['image'])
+            if '3d' in FLAGS.FILE:
+                minibatch_data['image'] = data_transforms.larcvsparse_to_dense_3d(minibatch_data['image'])
+            else:
+                minibatch_data['image'] = data_transforms.larcvsparse_to_dense_2d(minibatch_data['image'])
+
         elif FLAGS.IMAGE_MODE == 'sparse' and FLAGS.SPARSE:
             if '3d' in FLAGS.FILE:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_3d(minibatch_data['image'])
@@ -439,9 +450,9 @@ class trainercore(object):
 
     def increment_global_step(self):
 
-        previous_epoch = int(self._global_step * FLAGS.MINIBATCH_SIZE)
+        previous_epoch = int((self._global_step * FLAGS.MINIBATCH_SIZE) / self._epoch_size)
         self._global_step += 1
-        current_epoch = int(self._global_step * FLAGS.MINIBATCH_SIZE)
+        current_epoch = int((self._global_step * FLAGS.MINIBATCH_SIZE) / self._epoch_size)
 
         if previous_epoch != current_epoch:
             self.on_epoch_end()
@@ -523,20 +534,21 @@ class trainercore(object):
 
         # Add the global step / second to the tensorboard log:
         try:
-            metrics['global_step/sec'] = 1./self._global_step_per_second
+            metrics['global_step_per_sec'] = 1./self._seconds_per_global_step
+            metrics['images_per_second'] = FLAGS.MINIBATCH_SIZE / self._seconds_per_global_step
         except:
-            metrics['global_step/sec'] = 0.0
+            metrics['global_step_per_sec'] = 0.0
+            metrics['images_per_second'] = 0.0
 
         metrics['io_fetch_time'] = (io_end_time - io_start_time).total_seconds()
 
-
         # print("Calculated metrics")
 
-        self.log(metrics, level="train") 
+        self.log(metrics, saver="train") 
 
         # print("Completed Log")
 
-        self.summary(metrics, level="train")       
+        self.summary(metrics, saver="train")       
 
         # print("Summarized")
 
@@ -547,7 +559,7 @@ class trainercore(object):
         global_end_time = datetime.datetime.now()
 
         # Compute global step per second:
-        self._global_step_per_second = (global_end_time - global_start_time).total_seconds()
+        self._seconds_per_global_step = (global_end_time - global_start_time).total_seconds()
 
         # Increment the global step value:
         self.increment_global_step()
@@ -607,8 +619,8 @@ class trainercore(object):
             # Average metrics over the total number of iterations:
             total_metrics = { total_metrics[key] / n_iterations for key in metrics}
 
-            self.log(metrics, level="test")
-            self.summary(metrics, level="test")
+            self.log(metrics, saver="test")
+            self.summary(metrics, saver="test")
 
             return metrics
 
@@ -639,13 +651,14 @@ class trainercore(object):
                 self.checkpoint()
                 break
 
-            # Start IO thread for the next batch while we train the network
+            self.val_step()
+
             self.train_step()
 
-            self.val_step()
 
             self.checkpoint()
 
         if self._saver is not None:
             self._saver.close()
-
+        if self._aux_saver is not None:
+            self._aux_saver.close()

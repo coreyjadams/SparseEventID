@@ -100,8 +100,30 @@ def larcvsparse_to_scnsparse_2d(input_array):
 
     return output_list
 
-def larcvsparse_to_dense(input_array):
-    raise Exception("This function not yet implemented")
+def larcvsparse_to_dense_2d(input_array, dense_shape=512):
+
+    batch_size = input_array.shape[0]
+    n_planes   = input_array.shape[1]
+    output_array = numpy.zeros((batch_size, n_planes, dense_shape, dense_shape))
+
+    x_coords = input_array[:,:,:,0]
+    y_coords = input_array[:,:,:,1]
+    val_coords = input_array[:,:,:,2]
+
+
+    # Find the non_zero indexes of the input:
+    batch_index, plane_index, voxel_index = numpy.where(val_coords != 0.0)
+
+    values  = val_coords[batch_index, plane_index, voxel_index]
+    x_index = numpy.int32(x_coords[batch_index, plane_index, voxel_index])
+    y_index = numpy.int32(y_coords[batch_index, plane_index, voxel_index])
+
+
+    # Fill in the output tensor
+
+    output_array[batch_index, plane_index, x_index, y_index] = values    
+
+    return output_array
 
 def larcvdense_to_scnsparse_3d(input_array):
     # Convert a full scale 3D tensor (actually 5D, batch + channel at the end)

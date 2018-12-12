@@ -18,6 +18,11 @@ def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
 
+def conv5x5(in_planes, out_planes, stride=1):
+    """5x5 convolution with padding"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=5, stride=stride,
+                     padding=2, bias=False)
+
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -92,10 +97,6 @@ class Bottleneck(nn.Module):
 #####################################################################
 
 
-def conv5x5(in_planes, out_planes, stride=1):
-    """5x5 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=5, stride=stride,
-                     padding=2, bias=False)
 
 
 class BlockSeries(torch.nn.Module):
@@ -156,8 +157,8 @@ class ResNet(torch.nn.Module):
         for layer in range(FLAGS.NETWORK_DEPTH_PRE_MERGE):
 
             if FLAGS.SHARE_WEIGHTS:
-                self.pre_convolutional_layers.append(BlockSeries(n_filters, 2*n_filters, FLAGS.RES_BLOCKS_PER_LAYER))
-                n_filters *= 2
+                self.pre_convolutional_layers.append(BlockSeries(n_filters, n_filters + FLAGS.N_INITIAL_FILTERS, FLAGS.RES_BLOCKS_PER_LAYER))
+                n_filters += FLAGS.N_INITIAL_FILTERS
                 self.add_module("pre_merge_conv_{}".format(layer), self.pre_convolutional_layers[-1])
 
             else:
@@ -175,9 +176,9 @@ class ResNet(torch.nn.Module):
         self.post_convolutional_layers = []
         for layer in range(FLAGS.NETWORK_DEPTH_POST_MERGE):
 
-            self.post_convolutional_layers.append(BlockSeries(n_filters, 2*n_filters, FLAGS.RES_BLOCKS_PER_LAYER))
+            self.post_convolutional_layers.append(BlockSeries(n_filters, n_filters + FLAGS.N_INITIAL_FILTERS, FLAGS.RES_BLOCKS_PER_LAYER))
             # A downsample happens after the convolution, so it doubles the number of filters
-            n_filters *= 2
+            n_filters += FLAGS.N_INITIAL_FILTERS
 
         for i, layer in enumerate(self.post_convolutional_layers):
             self.add_module("post_merge_layer_{}".format(i), layer)
@@ -210,12 +211,16 @@ class ResNet(torch.nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def forward(self, x):
+    def forward(self, input_tensor):
         
         FLAGS = utils.flags.FLAGS()
+        batch_size = input_tensor.shape[0]
 
-        # Split the input into NPLANES streams
-        x = [ _ for _ in torch.split(x, 1, dim=1)]
+
+        # Split the input_tensor into NPLANES streams
+        x = [ _ for _ in torch.chunk(input_tensor, FLAGS.NPLANES, dim=1)]
+
+
 
         for p in range(len(x)):
 
@@ -228,7 +233,7 @@ class ResNet(torch.nn.Module):
                 x[p] = self.initial_convolution[p](x[p])
                 for i in range(len(self.pre_convolutional_layers)):
                     x[p] = self.pre_convolutional_layers[i][p](x[p])
-
+            
         # Merge the 3 streams into one with a concat:
         x = torch.cat(x, dim=1)
 
@@ -247,6 +252,7 @@ class ResNet(torch.nn.Module):
             # Apply global average pooling 
             kernel_size = output.shape[2:]
             output = torch.squeeze(nn.AvgPool2d(kernel_size, ceil_mode=False)(output))
+            output = output.view([batch_size, output.shape[-1]])
 
             output = nn.Softmax(dim=1)(output)
 
@@ -259,9 +265,12 @@ class ResNet(torch.nn.Module):
                 # Apply the bottle neck to make the right number of output filters:
                 output[key] = self.bottleneck[key](output[key])
 
+
                 # Apply global average pooling 
-                kernel_size = output[key].shape[1:-1]
-                output[key] = nn.AvgPool2d(kernel_size, ceil_mode=False)(output[key])
+                kernel_size = output[key].shape[2:]
+                
+                output[key] = torch.squeeze(nn.AvgPool2d(kernel_size, ceil_mode=False)(output[key]))
+                output[key] = output[key].view([batch_size, output[key].shape[-1]])
 
                 output[key] = nn.Softmax(dim=1)(output[key])
 
