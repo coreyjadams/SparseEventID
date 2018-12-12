@@ -54,6 +54,41 @@ class distributed_trainer(trainercore):
             trainercore.save_model(self)
             
 
+    def init_optimizer(self):
+
+        # This takes the base optimizer (self._opt) and replaces
+        # it with a distributed version
+
+        # Create an optimizer:
+        if FLAGS.LEARNING_RATE <= 0:
+            self._opt = torch.optim.Adam(self._net.parameters())
+        else:
+            self._opt = torch.optim.Adam(self._net.parameters(), FLAGS.LEARNING_RATE)
+
+
+        # Wrap the optimizer in a learning rate controller to ensure warmup and 
+        # decayed rate at the end.
+
+        lambda_warmup = lambda epoch: 1.0 if epoch < 3 else hvd.size() if epoch < 30 else 0.1
+
+        self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self._opt, lambda_warmup, last_epoch=-1)
+
+
+        self._opt = hvd.DistributedOptimizer(self._opt, named_parameters=self._net.named_parameters())
+
+
+        # self._train_op = opt.minimize(self._loss, self._global_step)
+        self._criterion = torch.nn.CrossEntropyLoss()
+
+
+    def init_saver(self):
+        if hvd.rank() == 0:
+            trainercore.init_saver(self)
+        else:
+            self._saver = None
+            self._aux_saver = None
+
 
     def initialize(self, io_only = False):
 
@@ -88,43 +123,11 @@ class distributed_trainer(trainercore):
                 n_trainable_parameters += numpy.prod(var.shape)
             print("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
 
+        self.init_optimizer()
 
-        # Create an optimizer:
-        if FLAGS.LEARNING_RATE <= 0:
-            self._opt = torch.optim.Adam(self._net.parameters())
-        else:
-            self._opt = torch.optim.Adam(self._net.parameters(), FLAGS.LEARNING_RATE)
-
-
-        # Wrap the optimizer in a learning rate controller to ensure warmup and 
-        # decayed rate at the end.
-
-        lambda_warmup = lambda epoch: 1.0 if epoch < 3 else hvd.size() if epoch < 30 else 0.1
-
-        self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self._opt, lambda_warmup, last_epoch=-1)
-
-
-        self._opt = hvd.DistributedOptimizer(self._opt, named_parameters=self._net.named_parameters())
-
-
-        # self._train_op = opt.minimize(self._loss, self._global_step)
-        self._criterion = torch.nn.CrossEntropyLoss()
-
+        self.init_saver()
         # hooks = self.get_standard_hooks()
 
-
-        # This sets up the summary saver:
-        if hvd.rank() == 0:
-            self._saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY)
-        else:
-            self._saver = None
-        # This code is supposed to add the graph definition.
-        # It doesn't currently work
-        # temp_dims = list(dims['image'])
-        # temp_dims[0] = 1
-        # dummy_input = torch.randn(size=tuple(temp_dims), requires_grad=True)
-        # self._saver.add_graph(self._net, (dummy_input,))
 
         # Here, either restore the weights of the network or initialize it:
         self._global_step = 0
@@ -147,15 +150,15 @@ class distributed_trainer(trainercore):
         elif FLAGS.LABEL_MODE == 'split':
             self._log_keys = ['loss']
             for key in FLAGS.KEYWORD_LABEL_SPLIT: 
-                self._log_keys.append('acc_{}'.format(key))
+                self._log_keys.append('acc/{}'.format(key))
 
 
 
 
 
-    def summary(self, metrics, level=""):
+    def summary(self, metrics, saver=""):
         if hvd.rank() == 0:
-            trainercore.summary(self, metrics, level)
+            trainercore.summary(self, metrics, saver)
         return
         
     def _compute_metrics(self, logits, minibatch_data, loss):
@@ -171,11 +174,7 @@ class distributed_trainer(trainercore):
         return metrics
 
     def on_epoch_end(self):
-        if hvd.rank() == 0:
-            print("Epoch end called")
-
         self._lr_scheduler.step()
-        pass
 
 
     def to_torch(self, minibatch_data):
@@ -191,6 +190,6 @@ class distributed_trainer(trainercore):
 
         return minibatch_data
 
-    def log(self, metrics, level=""):
+    def log(self, metrics, saver=""):
         if hvd.rank() == 0:
-            trainercore.log(self, metrics, level)
+            trainercore.log(self, metrics, saver)
