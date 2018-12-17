@@ -220,8 +220,6 @@ class ResNet(torch.nn.Module):
         # Split the input_tensor into NPLANES streams
         x = [ _ for _ in torch.chunk(input_tensor, FLAGS.NPLANES, dim=1)]
 
-
-
         for p in range(len(x)):
 
             # Apply all of the forward layers:

@@ -301,6 +301,7 @@ class resnet(FLAGS):
         self.NETWORK_DEPTH_POST_MERGE   = 3
         self.NPLANES                    = 3
         self.SHARE_WEIGHTS              = True
+        self.WEIGHT_DECAY               = 1e-4
 
         self.SPARSE                     = False
 
@@ -312,6 +313,8 @@ class resnet(FLAGS):
         parser.add_argument('-v', '--verbosity', type=int,default=self.VERBOSITY,
             help="Network verbosity at construction [default: {}]".format(self.VERBOSITY))
 
+        parser.add_argument('--weight-decay', type=float, default=self.WEIGHT_DECAY,
+            help="Weight decay strength [default: {}]".format(self.WEIGHT_DECAY))
 
         parser.add_argument('--n-initial-filters', type=int, default=self.N_INITIAL_FILTERS,
             help="Number of filters applied, per plane, for the initial convolution [default: {}]".format(self.N_INITIAL_FILTERS))
@@ -349,7 +352,7 @@ class resnet3D(FLAGS):
     def _set_defaults(self):
 
         self.VERBOSITY             = 0
-        self.N_INITIAL_FILTERS     = 5
+        self.N_INITIAL_FILTERS     = 32
         self.RES_BLOCKS_PER_LAYER  = 2
         self.NETWORK_DEPTH         = 5
         self.WEIGHT_DECAY          = 1e-4
