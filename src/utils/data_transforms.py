@@ -104,7 +104,7 @@ def larcvsparse_to_dense_2d(input_array, dense_shape=512):
 
     batch_size = input_array.shape[0]
     n_planes   = input_array.shape[1]
-    output_array = numpy.zeros((batch_size, n_planes, dense_shape, dense_shape))
+    output_array = numpy.zeros((batch_size, n_planes, dense_shape, dense_shape), dtype=numpy.float32)
 
     x_coords = input_array[:,:,:,0]
     y_coords = input_array[:,:,:,1]
