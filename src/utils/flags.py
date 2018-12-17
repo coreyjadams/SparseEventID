@@ -70,7 +70,7 @@ class FLAGS(Borg):
         self.CHECKPOINT_ITERATION  = 100
         self.SUMMARY_ITERATION     = 1
         self.LOGGING_ITERATION     = 1
-        self.LEARNING_RATE         = 0.01
+        self.LEARNING_RATE         = 0.0001
         self.ITERATIONS            = 5000
         self.VERBOSITY             = 0
         self.LOG_DIRECTORY         = './log'
@@ -352,7 +352,7 @@ class resnet3D(FLAGS):
         self.N_INITIAL_FILTERS     = 5
         self.RES_BLOCKS_PER_LAYER  = 2
         self.NETWORK_DEPTH         = 5
-
+        self.WEIGHT_DECAY          = 1e-4
         self.SPARSE                = False
 
         FLAGS._set_defaults(self)
@@ -370,6 +370,9 @@ class resnet3D(FLAGS):
             help="Number of residual blocks per layer [default: {}]".format(self.RES_BLOCKS_PER_LAYER))
         parser.add_argument('--network-depth', type=int, default=self.NETWORK_DEPTH,
             help="Total number of downsamples to apply [default: {}]".format(self.NETWORK_DEPTH))
+
+        parser.add_argument('--weight-decay', type=float, default=self.WEIGHT_DECAY,
+            help="Weight decay strength [default: {}]".format(self.WEIGHT_DECAY))
 
         parser.add_argument('--sparse', action='store_true', default=self.SPARSE,
             help="Run using submanifold sparse convolutions [default: {}]".format(self.SPARSE))

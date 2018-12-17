@@ -59,27 +59,11 @@ class distributed_trainer(trainercore):
         # This takes the base optimizer (self._opt) and replaces
         # it with a distributed version
 
-        # Create an optimizer:
-        if FLAGS.LEARNING_RATE <= 0:
-            self._opt = torch.optim.Adam(self._net.parameters())
-        else:
-            self._opt = torch.optim.Adam(self._net.parameters(), FLAGS.LEARNING_RATE)
-
-
-        # Wrap the optimizer in a learning rate controller to ensure warmup and 
-        # decayed rate at the end.
-
-        lambda_warmup = lambda epoch: 1.0 if epoch < 3 else hvd.size() if epoch < 30 else 0.1
-
-        self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self._opt, lambda_warmup, last_epoch=-1)
+        trainercore.init_optimizer(self)
 
 
         self._opt = hvd.DistributedOptimizer(self._opt, named_parameters=self._net.named_parameters())
 
-
-        # self._train_op = opt.minimize(self._loss, self._global_step)
-        self._criterion = torch.nn.CrossEntropyLoss()
 
 
     def init_saver(self):

@@ -138,9 +138,11 @@ class trainercore(object):
 
         # Create an optimizer:
         if FLAGS.LEARNING_RATE <= 0:
-            self._opt = torch.optim.Adam(self._net.parameters())
+            self._opt = torch.optim.Adam(self._net.parameters(),
+                weight_decay=FLAGS.WEIGHT_DECAY)
         else:
-            self._opt = torch.optim.Adam(self._net.parameters(), FLAGS.LEARNING_RATE)
+            self._opt = torch.optim.Adam(self._net.parameters(), lr=FLAGS.LEARNING_RATE,
+                weight_decay=FLAGS.WEIGHT_DECAY, )
 
 
         lambda_warmup = lambda epoch: 1.0 if epoch < 3 else hvd.size() if epoch < 30 else 0.1
