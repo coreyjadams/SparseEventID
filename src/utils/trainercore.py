@@ -145,7 +145,7 @@ class trainercore(object):
                 weight_decay=FLAGS.WEIGHT_DECAY, )
 
 
-        lambda_warmup = lambda epoch: 1.0 if epoch < 3 else hvd.size() if epoch < 30 else 0.1
+        lambda_warmup = lambda epoch: 1.0 if epoch < 30 else 0.1
 
         self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
             self._opt, lambda_warmup, last_epoch=-1)
@@ -504,6 +504,7 @@ class trainercore(object):
         # For a train step, we fetch data, run a forward and backward pass, and
         # if this is a logging step, we compute some logging metrics.
 
+        self._net.train()
 
         global_start_time = datetime.datetime.now()
 
@@ -516,7 +517,6 @@ class trainercore(object):
         io_end_time = datetime.datetime.now()
 
         minibatch_data = self.to_torch(minibatch_data)
-
         # Run a forward pass of the model on the input image:
         logits = self._net(minibatch_data['image'])
 
@@ -581,6 +581,9 @@ class trainercore(object):
         # perform a validation step
         # Validation steps can optionally accumulate over several minibatches, to
         # fit onto a gpu or other accelerator
+
+        self._net.eval()
+
         if self._global_step % FLAGS.AUX_ITERATION == 0:
 
             total_metrics = {}

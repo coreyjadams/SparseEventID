@@ -61,6 +61,10 @@ class distributed_trainer(trainercore):
 
         trainercore.init_optimizer(self)
 
+        lambda_warmup = lambda epoch: 1.0 if epoch < 5 else numpy.sqrt(hvd.size()) if epoch < 30 else 0.1
+
+        self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self._opt, lambda_warmup, last_epoch=-1)
 
         self._opt = hvd.DistributedOptimizer(self._opt, named_parameters=self._net.named_parameters())
 
