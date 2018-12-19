@@ -9,31 +9,95 @@ from src import utils
 # This code is copied from torch/vision/resnet.py:
 
 def sparse_conv3x3(in_planes, out_planes, stride=1):
-    """3x3 convolution with padding"""
     return scn.Convolution(2, in_planes, out_planes, filter_size=3, filter_stride=stride, bias=False)
 
 def sparse_conv1x1(in_planes, out_planes, stride=1):
-    """1x1 convolution"""
     return scn.Convolution(2, in_planes, out_planes, filter_size=1, filter_stride=stride, bias=False)
 
-def sparse_conv5x5(in_planes, out_planes, stride=1):
+
+
+def submanifold_sparse_conv3x3(in_planes, out_planes, stride=1):
+    """3x3 convolution with padding"""
+    return scn.SubmanifoldConvolution(2, in_planes, out_planes, filter_size=3, bias=False)
+
+def submanifold_sparse_conv1x1(in_planes, out_planes, stride=1):
+    """1x1 convolution"""
+    return scn.SubmanifoldConvolution(2, in_planes, out_planes, filter_size=1, bias=False)
+
+def submanifold_sparse_conv5x5(in_planes, out_planes, stride=1):
     """5x5 convolution with padding"""
-    return scn.Convolution(2, in_planes, out_planes, filter_size=5, filter_stride=stride, bias=False)
+    return scn.SubmanifoldConvolution(2, in_planes, out_planes, filter_size=5, bias=False)
+
+
+def conv3x3(in_planes, out_planes, stride=1):
+    """3x3 convolution with padding"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+                     padding=1, bias=False)
+
+def conv1x1(in_planes, out_planes, stride=1):
+    """1x1 convolution"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
+
+def conv5x5(in_planes, out_planes, stride=1):
+    """5x5 convolution with padding"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=5, stride=stride,
+                     padding=2, bias=False)
 
 
 
-class BasicBlock(nn.Module):
-    expansion = 1
+class SparseBasicBlock(nn.Module):
+
+    def __init__(self, inplanes, outplanes, stride=1):
+        nn.Module.__init__(self)
+        
+        if stride == 1:
+            self.conv1 = scn.SubmanifoldConvolution(dimension=2, 
+                nIn=inplanes, nOut=outplanes, filter_size=2, bias=False)
+        else:
+            self.conv1 = scn.Convolution(dimension=2, 
+                nIn=inplanes, nOut=outplanes, filter_size=2, filter_stride=stride, bias=False)
+        self.bn1 = scn.BatchNormReLU(outplanes)
+        self.conv2 = scn.SubmanifoldConvolution(dimension=2, 
+                nIn=outplanes, nOut=outplanes, filter_size=2, bias=False)
+        self.bn2 = scn.BatchNormalization(outplanes)
+        if stride == 1:
+            self.residual = scn.Identity()
+        else:
+            self.residual = scn.Convolution(dimension=2, 
+                nIn=inplanes, nOut=outplanes, filter_size=2, filter_stride=stride, bias=False)
+
+        self.add = scn.AddTable()
+
+    def forward(self, x):
+
+        residual = self.residual(x)
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        # The addition of sparse tensors is not straightforward, since
+        # the may not share active sites.
+        # Instead, concatenate the tables, then add the tables:
+
+        out = self.add([out, residual])
+
+        # # out += residual
+        # out = self.relu(out)
+
+        return out
+
+class DenseBasicBlock(nn.Module):
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
-        super(BasicBlock, self).__init__()
-        self.conv1 = sparse_conv3x3(inplanes, planes, stride)
-        self.bn1 = scn.BatchNormalization(planes)
-        self.relu = scn.ReLU()
-        self.conv2 = sparse_conv3x3(planes, planes)
-        self.bn2 = scn.BatchNormalization(planes)
+        nn.Module.__init__(self)
+        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = conv3x3(planes, planes)
+        self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
-        self.stride = stride
 
     def forward(self, x):
         residual = x
@@ -54,61 +118,39 @@ class BasicBlock(nn.Module):
         return out
 
 
-# class Bottleneck(nn.Module):
-#     expansion = 4
-
-#     def __init__(self, inplanes, planes, stride=1, downsample=None):
-#         super(Bottleneck, self).__init__()
-#         self.conv1 = conv1x1(inplanes, planes)
-#         self.bn1 = nn.BatchNorm2d(planes)
-#         self.conv2 = conv3x3(planes, planes, stride)
-#         self.bn2 = nn.BatchNorm2d(planes)
-#         self.conv3 = conv1x1(planes, planes * self.expansion)
-#         self.bn3 = nn.BatchNorm2d(planes * self.expansion)
-#         self.relu = nn.ReLU(inplace=True)
-#         self.downsample = downsample
-#         self.stride = stride
-
-#     def forward(self, x):
-#         residual = x
-
-#         out = self.conv1(x)
-#         out = self.bn1(out)
-#         out = self.relu(out)
-
-#         out = self.conv2(out)
-#         out = self.bn2(out)
-#         out = self.relu(out)
-
-#         out = self.conv3(out)
-#         out = self.bn3(out)
-
-#         if self.downsample is not None:
-#             residual = self.downsample(x)
-
-#         out += residual
-#         out = self.relu(out)
-
-#         return out
-
-
-#####################################################################
-
-
-
-
-class BlockSeries(torch.nn.Module):
+class SparseBlockSeries(torch.nn.Module):
 
 
     def __init__(self, inplanes, outplanes, n_blocks):
         torch.nn.Module.__init__(self)
 
-        downsample = scn.Sequential(
-                sparse_conv1x1(inplanes, outplanes, 2),
-                scn.BatchNormalization(outplanes),
+
+        self.blocks = [ SparseBasicBlock(inplanes, inplanes) for i in range(n_blocks-1) ]
+        self.blocks.append(SparseBasicBlock(inplanes, outplanes, stride=2))
+
+        for i, block in enumerate(self.blocks):
+            self.add_module('block_{}'.format(i), block)
+
+
+    def forward(self, x):
+        for i in range(len(self.blocks)):
+            x = self.blocks[i](x)
+
+        return x
+
+
+class DenseBlockSeries(torch.nn.Module):
+
+
+    def __init__(self, inplanes, outplanes, n_blocks):
+        torch.nn.Module.__init__(self)
+
+        downsample = nn.Sequential(
+                conv1x1(inplanes, outplanes, 2),
+                nn.BatchNorm2d(outplanes),
             )
-        self.blocks = [ BasicBlock(inplanes, inplanes) for i in range(n_blocks-1) ]
-        self.blocks.append(BasicBlock(inplanes, outplanes, stride=2, downsample=downsample))
+        self.blocks = [ DenseBasicBlock(inplanes, inplanes) for i in range(n_blocks-1) ]
+        self.blocks.append(DenseBasicBlock(inplanes, outplanes, stride=2, downsample=downsample))
 
         for i, block in enumerate(self.blocks):
             self.add_module('block_{}'.format(i), block)
@@ -145,12 +187,12 @@ class ResNet(torch.nn.Module):
         FLAGS = utils.flags.FLAGS()
 
         if FLAGS.SHARE_WEIGHTS:
-            self.initial_convolution = sparse_conv5x5(1, FLAGS.N_INITIAL_FILTERS)
+            self.initial_convolution = submanifold_sparse_conv5x5(1, FLAGS.N_INITIAL_FILTERS)
         else:
             self.initial_convolution = []
             for i in FLAGS.NPLANES:
                 self.initial_convolution.append(
-                        sparse_conv5x5(1, FLAGS.N_INITIAL_FILTERS)
+                        submanifold_sparse_conv5x5(1, FLAGS.N_INITIAL_FILTERS)
                     )
                 self.add_module("initial_convolution_plane_{}".format(i), self.initial_convolution[-1])
 
@@ -162,28 +204,30 @@ class ResNet(torch.nn.Module):
         for layer in range(FLAGS.NETWORK_DEPTH_PRE_MERGE):
 
             if FLAGS.SHARE_WEIGHTS:
-                self.pre_convolutional_layers.append(BlockSeries(n_filters, 2*n_filters, FLAGS.RES_BLOCKS_PER_LAYER))
-                n_filters *= 2
+                self.pre_convolutional_layers.append(SparseBlockSeries(n_filters, FLAGS.N_INITIAL_FILTERS + n_filters, FLAGS.RES_BLOCKS_PER_LAYER))
+                n_filters += FLAGS.N_INITIAL_FILTERS
                 self.add_module("pre_merge_conv_{}".format(layer), self.pre_convolutional_layers[-1])
 
             else:
                 self.pre_convolutional_layers.append(
-                    [ BlockSeries(n_filters, n_filters, FLAGS.RES_BLOCKS_PER_LAYER) for x in range(FLAGS.NPLANES)]
+                    [ SparseBlockSeries(n_filters, FLAGS.N_INITIAL_FILTERS + n_filters, FLAGS.RES_BLOCKS_PER_LAYER) for x in range(FLAGS.NPLANES)]
                     )
-                n_filters *= 2
+                n_filters += FLAGS.N_INITIAL_FILTERS
                 for plane in FLAGS.NPLANES:
                     self.add_module("pre_merge_conv_{}_plane_{}".format(layer, plane),
                                      self.pre_convolutional_layers[-1][plane])
 
 
         # The next operations apply after the merge across planes has happened.
+        self.sparse_to_dense = scn.SparseToDense(2, n_filters)
+
         n_filters *= FLAGS.NPLANES
         self.post_convolutional_layers = []
         for layer in range(FLAGS.NETWORK_DEPTH_POST_MERGE):
 
-            self.post_convolutional_layers.append(BlockSeries(n_filters, 2*n_filters, FLAGS.RES_BLOCKS_PER_LAYER))
+            self.post_convolutional_layers.append(DenseBlockSeries(n_filters, FLAGS.NPLANES*FLAGS.N_INITIAL_FILTERS + n_filters, FLAGS.RES_BLOCKS_PER_LAYER))
             # A downsample happens after the convolution, so it doubles the number of filters
-            n_filters *= 2
+            n_filters += FLAGS.NPLANES*FLAGS.N_INITIAL_FILTERS
 
         for i, layer in enumerate(self.post_convolutional_layers):
             self.add_module("post_merge_layer_{}".format(i), layer)
@@ -195,13 +239,13 @@ class ResNet(torch.nn.Module):
         # output to multiple labels
 
         if FLAGS.LABEL_MODE == 'all':
-            self.final_layer = BlockSeries(n_filters, n_filters, FLAGS.RES_BLOCKS_PER_LAYER)
-            self.bottleneck  = sparse_conv1x1(n_filters, output_shape[-1])
+            self.final_layer = DenseBlockSeries(n_filters, n_filters, FLAGS.RES_BLOCKS_PER_LAYER)
+            self.bottleneck  = conv1x1(n_filters, output_shape[-1])
         else:
-            self.final_layer = { key : BlockSeries(n_filters, n_filters, FLAGS.RES_BLOCKS_PER_LAYER) for key in output_shape}
-            self.bottleneck  = { key : sparse_conv1x1(n_filters, output_shape[key][-1]) for key in output_shape}
+            self.final_layer = { key : DenseBlockSeries(n_filters, n_filters, FLAGS.RES_BLOCKS_PER_LAYER) for key in output_shape}
+            self.bottleneck  = { key : conv1x1(n_filters, output_shape[key][-1]) for key in output_shape}
             for key in self.final_layer:
-                self.add_module("final_layer_{}".format(key), self.final_layer[key])
+                self.add_module("final_layer_{}".format(key), self.bottleneck[key])
                 self.add_module("bottleneck_{}".format(key), self.final_layer[key])
 
 
@@ -215,6 +259,12 @@ class ResNet(torch.nn.Module):
             elif isinstance(m, nn.BatchNorm2d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
+            elif isinstance(m, scn.SubmanifoldConvolution):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, scn.BatchNormReLU) or isinstance(m, scn.BatchNormalization):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
 
     def forward(self, x):
         
@@ -226,11 +276,8 @@ class ResNet(torch.nn.Module):
 
         for p in range(len(x)):
 
-            print(x[p][0].shape)
-            print(x[p][1].shape)
-            print(x[p][2].shape)
             # Convert to the right format:
-            x[p] = self.input_tensor((x[p][0], x[p][1] ) )
+            x[p] = self.input_tensor(x[p] )
 
             # Apply all of the forward layers:
             if FLAGS.SHARE_WEIGHTS:
@@ -243,6 +290,8 @@ class ResNet(torch.nn.Module):
                     x[p] = self.pre_convolutional_layers[i][p](x[p])
 
         # Merge the 3 streams into one with a concat:
+        x = [self.sparse_to_dense(plane) for plane in x ]
+        
         x = torch.cat(x, dim=1)
 
         # Apply the after-concat convolutions:
@@ -273,8 +322,8 @@ class ResNet(torch.nn.Module):
                 output[key] = self.bottleneck[key](output[key])
 
                 # Apply global average pooling 
-                kernel_size = output[key].shape[1:-1]
-                output[key] = nn.AvgPool2d(kernel_size, ceil_mode=False)(output[key])
+                kernel_size = output[key].shape[2:]
+                output[key] = torch.squeeze(nn.AvgPool2d(kernel_size, ceil_mode=False)(output[key]))
 
                 output[key] = nn.Softmax(dim=1)(output[key])
 
