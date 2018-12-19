@@ -297,8 +297,8 @@ class resnet(FLAGS):
         self.VERBOSITY                  = 0
         self.N_INITIAL_FILTERS          = 2
         self.RES_BLOCKS_PER_LAYER       = 2
-        self.NETWORK_DEPTH_PRE_MERGE    = 3
-        self.NETWORK_DEPTH_POST_MERGE   = 3
+        self.NETWORK_DEPTH_PRE_MERGE    = 4
+        self.NETWORK_DEPTH_POST_MERGE   = 2
         self.NPLANES                    = 3
         self.SHARE_WEIGHTS              = True
         self.WEIGHT_DECAY               = 1e-4
