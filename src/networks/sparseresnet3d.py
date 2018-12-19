@@ -1,4 +1,4 @@
-import torch
+ import torch
 import torch.nn as nn
 import sparseconvnet as scn
 
@@ -184,13 +184,13 @@ class ResNet(torch.nn.Module):
             self.add_module("conv_{}".format(layer), self.convolutional_layers[-1])
 
         # Here, take the final output and convert to a dense tensor:
-        self.sparse_to_dense = scn.SparseToDense(512, n_filters)
+        self.sparse_to_dense = scn.SparseToDense(dimension=2, nPlanes = n_filters)
 
 
         if FLAGS.LABEL_MODE == 'all':
             self.bottleneck  = conv1x1(n_filters, output_shape[-1])
         else:
-            self.final_layer = { key : BlockSeries(n_filters, n_filters, FLAGS.RES_BLOCKS_PER_LAYER) for key in output_shape}
+            self.final_layer = { key : BlockSeries(n_filters, n_filters, 2*FLAGS.RES_BLOCKS_PER_LAYER) for key in output_shape}
             self.bottleneck  = { key : conv1x1(n_filters, output_shape[key][-1]) for key in output_shape}
             for key in self.final_layer:
                 self.add_module("final_layer_{}".format(key), self.final_layer[key])
@@ -202,11 +202,13 @@ class ResNet(torch.nn.Module):
 
         # Configure initialization:
         for m in self.modules():
-            if isinstance(m, nn.Conv3d):
+            if isinstance(m, nn.Conv3d) or isinstance(m, scn.SubmanifoldConvolution):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm2d):
+            elif isinstance(m, scn.BatchNormReLU):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
+
+
 
     def forward(self, x):
         
@@ -230,8 +232,7 @@ class ResNet(torch.nn.Module):
         if FLAGS.LABEL_MODE == 'all':
             # Apply the final residual block:
             # Apply the bottle neck to make the right number of output filters:
-            
-            x = self.sparse_to_dense(x)
+            output = self.sparse_to_dense(output)
             output = self.bottleneck(x)
 
 
