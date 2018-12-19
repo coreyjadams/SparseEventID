@@ -176,9 +176,9 @@ class ResNet(torch.nn.Module):
         self.post_convolutional_layers = []
         for layer in range(FLAGS.NETWORK_DEPTH_POST_MERGE):
 
-            self.post_convolutional_layers.append(BlockSeries(n_filters, n_filters + FLAGS.N_INITIAL_FILTERS, FLAGS.RES_BLOCKS_PER_LAYER))
+            self.post_convolutional_layers.append(BlockSeries(n_filters, n_filters + FLAGS.NPLANES*FLAGS.N_INITIAL_FILTERS, FLAGS.RES_BLOCKS_PER_LAYER))
             # A downsample happens after the convolution, so it doubles the number of filters
-            n_filters += FLAGS.N_INITIAL_FILTERS
+            n_filters += FLAGS.NPLANES*FLAGS.N_INITIAL_FILTERS
 
         for i, layer in enumerate(self.post_convolutional_layers):
             self.add_module("post_merge_layer_{}".format(i), layer)
