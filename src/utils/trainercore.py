@@ -384,7 +384,10 @@ class trainercore(object):
       
 
             try:
-                s += " ({:.2}s / {:.2} IOs)".format((self._current_log_time - self._previous_log_time).total_seconds(), metrics['io_fetch_time'])
+                s += " ({:.2}s / {:.2} IOs / {:.2})".format(
+                    (self._current_log_time - self._previous_log_time).total_seconds(), 
+                    metrics['io_fetch_time'],
+                    metrics['step_time'])
             except:
                 pass
 
@@ -484,15 +487,11 @@ class trainercore(object):
                             minibatch_data['image'][2],
                         )
                 else:
-                    new_image = []
-                    for p in range(len(minibatch_data['image'])):
-                        new_tuple = (
-                            torch.tensor(minibatch_data['image'][p][0]).long(),
-                            torch.tensor(minibatch_data['image'][p][1], device=device),
-                            minibatch_data['image'][p][2],
-                            )
-                        new_image.append(new_tuple)
-                    minibatch_data['image'] = new_image
+                    minibatch_data['image'] = (
+                            torch.tensor(minibatch_data['image'][0]).long(),
+                            torch.tensor(minibatch_data['image'][1], device=device),
+                            minibatch_data['image'][2],
+                        )
             else:
                 minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
         
@@ -546,6 +545,16 @@ class trainercore(object):
 
         # print("Calculated metrics")
 
+
+        step_start_time = datetime.datetime.now()
+        # Apply the parameter update:
+        self._opt.step()
+        # print("Updated Weights")
+        global_end_time = datetime.datetime.now()
+
+        metrics['step_time'] = (global_end_time - step_start_time).total_seconds()
+
+
         self.log(metrics, saver="train") 
 
         # print("Completed Log")
@@ -553,12 +562,6 @@ class trainercore(object):
         self.summary(metrics, saver="train")       
 
         # print("Summarized")
-
-
-        # Apply the parameter update:
-        self._opt.step()
-        # print("Updated Weights")
-        global_end_time = datetime.datetime.now()
 
         # Compute global step per second:
         self._seconds_per_global_step = (global_end_time - global_start_time).total_seconds()

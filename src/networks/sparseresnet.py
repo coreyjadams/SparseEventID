@@ -134,6 +134,8 @@ class ResNet(torch.nn.Module):
         # (first spatial dim is plane)
         self.input_tensor = scn.InputLayer(dimension=3, spatial_size=[FLAGS.NPLANES,512,512])
 
+        spatial_size = 512
+
 
         # Here, define the layers we will need in the forward path:
 
@@ -163,6 +165,7 @@ class ResNet(torch.nn.Module):
                     FLAGS.RES_BLOCKS_PER_LAYER)
                 )
             n_filters += FLAGS.N_INITIAL_FILTERS
+            spatial_size /= 2
             self.add_module("pre_merge_conv_{}".format(layer), 
                 self.pre_convolutional_layers[-1])
 
@@ -182,6 +185,7 @@ class ResNet(torch.nn.Module):
                 )
             # A downsample happens after the convolution, so it doubles the number of filters
             n_filters += FLAGS.N_INITIAL_FILTERS
+            spatial_size /= 2
 
         for i, layer in enumerate(self.post_convolutional_layers):
             self.add_module("post_merge_layer_{}".format(i), layer)
@@ -197,14 +201,16 @@ class ResNet(torch.nn.Module):
                 n_filters, 
                 FLAGS.RES_BLOCKS_PER_LAYER,
                 nplanes=FLAGS.NPLANES)
+            spatial_size /= 2
 
-            self.bottleneck = scn.SubmanifoldConvolution(dimension=3, 
-                nIn=n_filters, 
-                nOut=output_shape[-1], 
-                filter_size=[FLAGS.NPLANES,1,1], 
-                bias=False)
+            self.bottleneck = scn.Convolution(dimension=3, 
+                        nIn             = n_filters,
+                        nOut            = output_shape[-1],
+                        filter_size     = [FLAGS.NPLANES,spatial_size,spatial_size],
+                        filter_stride   = [1,1,1],
+                        bias            = False)
 
-            self.bottleneck  = conv1x1(n_filters, output_shape[-1])
+            self.sparse_to_dense = scn.SparseToDense(dimension=3, nPlanes=output_shape[-1])
         else:
             self.final_layer = { 
                     key : SparseBlockSeries(n_filters, 
@@ -213,18 +219,28 @@ class ResNet(torch.nn.Module):
                             nplanes=FLAGS.NPLANES)
                     for key in output_shape
                 }
+            spatial_size /= 2
             self.bottleneck  = { 
-                    key : scn.SubmanifoldConvolution(dimension=3, 
-                                nIn=n_filters, 
-                                nOut=output_shape[key][-1], 
-                                filter_size=[FLAGS.NPLANES,1,1], 
-                                bias=False) 
+                    key : scn.Convolution(dimension=3, 
+                        nIn             = n_filters,
+                        nOut            = output_shape[key][-1],
+                        filter_size     = [FLAGS.NPLANES,spatial_size,spatial_size],
+                        filter_stride   = [1,1,1],
+                        bias            = False)
                     for key in output_shape
                 }
-            for key in self.final_layer:
-                self.add_module("final_layer_{}".format(key), self.bottleneck[key])
-                self.add_module("bottleneck_{}".format(key), self.final_layer[key])
+            self.sparse_to_dense = {
+                    key : scn.SparseToDense(dimension=3, nPlanes=output_shape[key][-1])
+                    for key in output_shape
+                }
 
+            for key in self.final_layer:
+                self.add_module("final_layer_{}".format(key), self.final_layer[key])
+                self.add_module("bottleneck_{}".format(key), self.bottleneck[key])
+                self.add_module("sparse_to_dense_{}".format(key), self.sparse_to_dense[key])
+
+
+        # Sparse to Dense conversion to apply before global average pooling:
 
         # The rest of the final operations (reshape, softmax) are computed in the forward pass
 
@@ -259,30 +275,16 @@ class ResNet(torch.nn.Module):
         # Apply all of the forward layers:
         x = self.initial_convolution(x)
         for i in range(len(self.pre_convolutional_layers)):
-            print(x.spatial_size)
-            print(len(x.features[0]))
-            print(len(x.features))
             x = self.pre_convolutional_layers[i](x)
 
         # # Merge the 3 streams into one with a concat:
         # x = self.concat(x)
-        print("switching to multiplane")
-        print(x.spatial_size)
         # Apply the after-concat convolutions:
         for i in range(len(self.post_convolutional_layers)):
-            print(x.spatial_size)
-            print(len(x.features[0]))
-            print(len(x.features))
             x = self.post_convolutional_layers[i](x)
-            print(x.spatial_size)
-            print(len(x.features[0]))
-            print(len(x.features))
 
-            print("next")
 
         # Apply the final steps to get the right output shape
-
-        print("Final Layers")
 
         if FLAGS.LABEL_MODE == 'all':
             # Apply the final residual block:
@@ -306,8 +308,21 @@ class ResNet(torch.nn.Module):
                 output[key] = self.bottleneck[key](output[key])
 
                 # Apply global average pooling 
-                kernel_size = output[key].shape[2:]
-                output[key] = torch.squeeze(nn.AvgPool2d(kernel_size, ceil_mode=False)(output[key]))
+                kernel_size = output[key].spatial_size
+
+                # Convert to dense tensor:
+                output[key] = self.sparse_to_dense[key](output[key])
+
+                # Squeeze off the last few dimensions:
+                output[key] = output[key].view(output[key].shape[0:2])
+
+                # output[key] = scn.AveragePooling(dimension=3,
+                #     pool_size=kernel_size, pool_stride=kernel_size)(output[key])
+
+                # print (output[key].spatial_size)
+                # print (output[key])
+    
+                # print (output[key].size())
 
                 output[key] = nn.Softmax(dim=1)(output[key])
 

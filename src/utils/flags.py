@@ -203,14 +203,18 @@ class FLAGS(Borg):
 
         # IO test parser
         self.iotest_parser = subparsers.add_parser("iotest", help="Test io only (no network)")
-        self.iotest_parser  = self._add_default_network_configuration(self.iotest_parser)
+        self.iotest_parser = self._add_default_network_configuration(self.iotest_parser)
         self.iotest_parser = self._add_default_io_configuration(self.iotest_parser)
         self.iotest_parser = self._add_aux_io_configuration(self.iotest_parser)
-        self.iotest_parser  = self._add_core_configuration(self.iotest_parser)
+        self.iotest_parser = self._add_core_configuration(self.iotest_parser)
 
 
         # # inference parser
-        # inference_parser = subparsers.add_parser("inference",help="Run inference of Edge-GCNN")
+        self.inference_parser = subparsers.add_parser("inference",help="Run inference (optional output)")
+        self.inference_parser = self._add_default_network_configuration(self.inference_parser)
+        self.inference_parser = self._add_default_io_configuration(self.inference_parser)
+        self.inference_parser = self._add_aux_io_configuration(self.inference_parser)
+        self.inference_parser = self._add_core_configuration(self.inference_parser)
        
         # cls.inference_parser = cls._add_default_parser_configuration(inference_parser)
         # cls.iotest_parser    = cls._add_default_parser_configuration(iotest_parser)

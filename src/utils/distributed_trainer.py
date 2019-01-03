@@ -120,16 +120,24 @@ class distributed_trainer(trainercore):
         # Here, either restore the weights of the network or initialize it:
         self._global_step = 0
         # Restore the state from the root rank:
-        if hvd.rank() == 0:
-            self.restore_model()
+        # if hvd.rank() == 0:
+        #     self.restore_model()
 
         # Broadcast the state of the model:
+        # print(self._net.state_dict().keys())
+        # print(self._opt.state_dict()['state'])
         hvd.broadcast_parameters(self._net.state_dict(), root_rank = 0)
+        # hvd.broadcast_parameters(self._global_step, root_rank = 0)
+
+        # Broadcast the state of the optimizer?
 
         if FLAGS.COMPUTE_MODE == "CPU":
             pass
         if FLAGS.COMPUTE_MODE == "GPU":
             self._net.cuda()
+            # self._opt.cuda()
+            
+        hvd.broadcast_optimizer_state(self._opt, root_rank = 0)
 
         print("Rank ", hvd.rank(), next(self._net.parameters()).device)
 

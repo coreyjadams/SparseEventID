@@ -71,6 +71,8 @@ def larcvsparse_to_scnsparse_2d(input_array):
     raw_planes = numpy.split(input_array,n_planes, axis=1)
 
     output_list = []
+    output_features = []
+    output_dimension = []
 
     for i, plane in enumerate(raw_planes):
         # First, squeeze off the plane dimension from this image:
@@ -84,6 +86,7 @@ def larcvsparse_to_scnsparse_2d(input_array):
         # Pull together the different dimensions:
         x = x[non_zero_locs]
         y = y[non_zero_locs]
+        p = numpy.full(x.shape, fill_value=i)
         features = features[non_zero_locs]
         features = numpy.expand_dims(features,axis=-1)
 
@@ -91,12 +94,15 @@ def larcvsparse_to_scnsparse_2d(input_array):
 
         # dimension = numpy.concatenate([x,y,batch], axis=0)
         # dimension = numpy.stack([x,y,batch], axis=-1)
-        dimension = numpy.stack([x,y, batch], axis=-1)
+        dimension = numpy.stack([p,x,y,batch], axis=-1)
 
+        output_features.append(features)
+        output_dimension.append(dimension)
 
-        output_list.append(
-            (dimension, features, batch_size)
-            )
+    output_features = numpy.concatenate(output_features)
+    output_dimension = numpy.concatenate(output_dimension)
+
+    output_list = [output_dimension, output_features, batch_size]
 
     return output_list
 
