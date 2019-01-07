@@ -43,7 +43,8 @@ class distributed_trainer(trainercore):
         self._iteration       = 0
         self._rank            = hvd.rank()
 
-
+        if self._rank == 0:
+            FLAGS.dump_config()
         # Make sure that 'LEARNING_RATE' and 'TRAINING'
         # are in net network parameters:
 
