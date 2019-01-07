@@ -216,8 +216,8 @@ class FLAGS(Borg):
         self.inference_parser = self._add_aux_io_configuration(self.inference_parser)
         self.inference_parser = self._add_core_configuration(self.inference_parser)
        
-        # cls.inference_parser = cls._add_default_parser_configuration(inference_parser)
-        # cls.iotest_parser    = cls._add_default_parser_configuration(iotest_parser)
+        # self.inference_parser = self._add_default_parser_configuration(inference_parser)
+        # self.iotest_parser    = self._add_default_parser_configuration(iotest_parser)
       
 
     def _add_core_configuration(self, parser):
@@ -242,6 +242,10 @@ class FLAGS(Borg):
         self._create_parsers()
         args = self._parser.parse_args()
         self.update(vars(args))
+
+        if self.MODE == 'inference':
+            self.TRAINING = False
+
 
 
     def dump_config(self):
@@ -314,6 +318,7 @@ class resnet(FLAGS):
     def _add_default_network_configuration(self, parser):
 
 
+
         parser.add_argument('-v', '--verbosity', type=int,default=self.VERBOSITY,
             help="Network verbosity at construction [default: {}]".format(self.VERBOSITY))
 
@@ -365,7 +370,6 @@ class resnet3D(FLAGS):
         FLAGS._set_defaults(self)
 
     def _add_default_network_configuration(self, parser):
-
 
         parser.add_argument('-v', '--verbosity', type=int,default=self.VERBOSITY,
             help="Network verbosity at construction [default: {}]".format(self.VERBOSITY))
