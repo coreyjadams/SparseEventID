@@ -36,7 +36,7 @@ def main():
         from src.utils import trainercore
         trainer = trainercore.trainercore()
         
-    if FLAGS.MODE == 'train':
+    if FLAGS.MODE == 'train' or FLAGS.MODE == 'inference':
         if FLAGS.SPARSE:
             from src.networks import sparseresnet
             net = sparseresnet.ResNet
@@ -62,6 +62,7 @@ def main():
                 if trainer._rank == 0:
                     print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
             # time.sleep(0.5)
+
 
     trainer.stop()
 
