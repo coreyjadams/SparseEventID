@@ -60,28 +60,32 @@ class trainercore(object):
         # All of the additional tools are in case there is a test set up:
         if FLAGS.AUX_FILE is not None:
 
-            io_config = {
-                'filler_name' : FLAGS.AUX_FILLER,
-                'filler_cfg'  : FLAGS.AUX_FILE,
-                'verbosity'   : FLAGS.VERBOSITY,
-                'make_copy'   : True
-            }
+            if FLAGS.TRAINING:
+                io_config = {
+                    'filler_name' : FLAGS.AUX_FILLER,
+                    'filler_cfg'  : FLAGS.AUX_FILE,
+                    'verbosity'   : FLAGS.VERBOSITY,
+                    'make_copy'   : True
+                }
 
-            if FLAGS.LABEL_MODE == 'all':
+                if FLAGS.LABEL_MODE == 'all':
 
-                data_keys = OrderedDict({
-                    'image': FLAGS.AUX_KEYWORD_DATA, 
-                    'label': FLAGS.AUX_KEYWORD_LABEL
-                    })
+                    data_keys = OrderedDict({
+                        'image': FLAGS.AUX_KEYWORD_DATA, 
+                        'label': FLAGS.AUX_KEYWORD_LABEL
+                        })
+                else:
+                    data_keys = OrderedDict({
+                        'image': FLAGS.AUX_KEYWORD_DATA,
+                        })
+                    for label in FLAGS.AUX_KEYWORD_LABEL:
+                        data_keys.update({label : label})
+
+                # Then this is a testing file
+                self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys)
             else:
-                data_keys = OrderedDict({
-                    'image': FLAGS.AUX_KEYWORD_DATA,
-                    })
-                for label in FLAGS.AUX_KEYWORD_LABEL:
-                    data_keys.update({label : label})
+                self._larcv_interface.prepare_writer(FLAGS.AUX_FILE)
 
-
-            self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys)
 
     def init_network(self):
 
@@ -101,6 +105,7 @@ class trainercore(object):
             self._net.train(True)
 
     def initialize(self, io_only=False):
+
 
         self._initialize_io()
 
@@ -161,6 +166,9 @@ class trainercore(object):
 
         if FLAGS.AUX_FILE is not None and FLAGS.TRAINING:
             self._aux_saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY + "/test/")
+        elif FLAGS.AUX_FILE is not None and not FLAGS.TRAINING:
+            self._aux_saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY + "/val/")
+
         else:
             self._aux_saver = None
         # This code is supposed to add the graph definition.
@@ -413,13 +421,15 @@ class trainercore(object):
             self._saver.add_scalar("learning_rate", self._lr_scheduler.get_lr()[0], self._global_step)
             pass
 
-    def fetch_next_batch(self, mode='primary'):
+    def fetch_next_batch(self, mode='primary', metadata=False):
 
-        minibatch_data = self._larcv_interface.fetch_minibatch_data(mode)
+        minibatch_data = self._larcv_interface.fetch_minibatch_data(mode, fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(mode)
 
 
         for key in minibatch_data:
+            if key == 'entries' or key == 'event_ids':
+                continue
             minibatch_data[key] = numpy.reshape(minibatch_data[key], minibatch_dims[key])
 
         # Strip off the primary/aux label in the keys:
@@ -479,6 +489,8 @@ class trainercore(object):
 
 
         for key in minibatch_data:
+            if key == 'entries' or key =='event_ids':
+                continue
             if key == 'image' and FLAGS.SPARSE:
                 if '3d' in FLAGS.FILE:
                     minibatch_data['image'] = (
@@ -589,39 +601,30 @@ class trainercore(object):
 
         if self._global_step % FLAGS.AUX_ITERATION == 0:
 
-            total_metrics = {}
-            for iteration in range(n_iterations):
 
-                # Fetch the next batch of data with larcv
-                # (Make sure to pull from the validation set)
-                minibatch_data = self.fetch_next_batch('aux')        
+            # Fetch the next batch of data with larcv
+            # (Make sure to pull from the validation set)
+            minibatch_data = self.fetch_next_batch('aux')        
 
 
-                # Convert the input data to torch tensors
-                minibatch_data = self.to_torch(minibatch_data)
-                
-                # Run a forward pass of the model on the input image:
-                logits = self._net(minibatch_data['image'])
+            # Convert the input data to torch tensors
+            minibatch_data = self.to_torch(minibatch_data)
+            
+            # Run a forward pass of the model on the input image:
+            logits = self._net(minibatch_data['image'])
 
-                # # Here, we have to map the logit keys to aux keys
-                # for key in logits.keys():
-                #     new_key = 'aux_' + key
-                #     logits[new_key] = logits.pop(key)
+            # # Here, we have to map the logit keys to aux keys
+            # for key in logits.keys():
+            #     new_key = 'aux_' + key
+            #     logits[new_key] = logits.pop(key)
 
 
 
-                # Compute the loss
-                loss = self._calculate_loss(minibatch_data, logits)
+            # Compute the loss
+            loss = self._calculate_loss(minibatch_data, logits)
 
-                # Compute the metrics for this iteration:
-                metrics = self._compute_metrics(logits, minibatch_data, loss)
-
-
-                # Add them to the total metrics for this validation step:
-                if total_metrics == {}:
-                    total_metrics = metrics
-                else:
-                    total_metrics = { total_metrics[key] + metrics[key] for key in metrics}
+            # Compute the metrics for this iteration:
+            metrics = self._compute_metrics(logits, minibatch_data, loss)
 
 
             # Average metrics over the total number of iterations:
@@ -646,15 +649,16 @@ class trainercore(object):
         total_metrics = {}
 
         # Fetch the next batch of data with larcv
-        # (Make sure to pull from the validation set)
-        minibatch_data = self.fetch_next_batch('aux')        
+        minibatch_data = self.fetch_next_batch(metadata=True)
 
 
         # Convert the input data to torch tensors
         minibatch_data = self.to_torch(minibatch_data)
         
         # Run a forward pass of the model on the input image:
-        logits = self._net(minibatch_data['image'])
+        with torch.no_grad():
+            logits = self._net(minibatch_data['image'])
+
 
         # # Here, we have to map the logit keys to aux keys
         # for key in logits.keys():
@@ -663,11 +667,10 @@ class trainercore(object):
 
         # If there is an aux file, for ana that means an output file.
         # Call the larcv interface to write data:
-        if FLAGS.LABEL_MODE == 'all':
-            self._larcv_interface.write_output(data=logits, datatype='meta', producer='all')
-        else:
-            for key in logits:
-                self._larcv_interface.write_output(data=logits[key], datatype='meta', producer=key)
+        if FLAGS.AUX_FILE is not None:
+            writable_logits = numpy.asarray(logits.cpu())
+            self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer='all',
+                entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
 
         # If the input data has labels available, compute the metrics:
         if 'label' in minibatch_data:
@@ -677,16 +680,6 @@ class trainercore(object):
             # Compute the metrics for this iteration:
             metrics = self._compute_metrics(logits, minibatch_data, loss)
 
-
-            # Add them to the total metrics for this validation step:
-            if total_metrics == {}:
-                total_metrics = metrics
-            else:
-                total_metrics = { total_metrics[key] + metrics[key] for key in metrics}
-
-
-            # Average metrics over the total number of iterations:
-            total_metrics = { total_metrics[key] / n_iterations for key in metrics}
 
             self.log(metrics, saver="test")
             self.summary(metrics, saver="test")
