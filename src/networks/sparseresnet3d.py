@@ -58,7 +58,8 @@ class BasicBlock(nn.Module):
             self.residual = scn.Convolution(dimension=3, 
                 nIn=inplanes, nOut=outplanes, filter_size=2, filter_stride=stride, bias=False)
 
-        self.add = scn.AddTable()
+        self.add  = scn.AddTable()
+        self.relu = scn.ReLU()
 
     def forward(self, x):
 
@@ -76,7 +77,7 @@ class BasicBlock(nn.Module):
         out = self.add([out, residual])
 
         # # out += residual
-        # out = self.relu(out)
+        out = self.relu(out)
 
         return out
 
@@ -190,7 +191,7 @@ class ResNet(torch.nn.Module):
         if FLAGS.LABEL_MODE == 'all':
             self.bottleneck  = conv1x1(n_filters, output_shape[-1])
         else:
-            self.final_layer = { key : BlockSeries(n_filters, n_filters, 2*FLAGS.RES_BLOCKS_PER_LAYER) for key in output_shape}
+            self.final_layer = { key : BlockSeries(n_filters, n_filters, 4*FLAGS.RES_BLOCKS_PER_LAYER) for key in output_shape}
             self.bottleneck  = { key : conv1x1(n_filters, output_shape[key][-1]) for key in output_shape}
             for key in self.final_layer:
                 self.add_module("final_layer_{}".format(key), self.final_layer[key])
