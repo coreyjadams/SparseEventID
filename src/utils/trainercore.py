@@ -625,6 +625,67 @@ class trainercore(object):
 
 
             # Average metrics over the total number of iterations:
+            metrics = { key : total_metrics[key] / n_iterations for key in metrics}
+
+            self.log(metrics, saver="test")
+            self.summary(metrics, saver="test")
+
+            return metrics
+
+    def ana_step(self):
+
+        # First, validation only occurs on training:
+        if FLAGS.TRAINING: return
+
+        # perform a validation step
+
+        # Set network to eval mode
+        self._net.eval()
+
+
+        total_metrics = {}
+
+        # Fetch the next batch of data with larcv
+        # (Make sure to pull from the validation set)
+        minibatch_data = self.fetch_next_batch('aux')        
+
+
+        # Convert the input data to torch tensors
+        minibatch_data = self.to_torch(minibatch_data)
+        
+        # Run a forward pass of the model on the input image:
+        logits = self._net(minibatch_data['image'])
+
+        # # Here, we have to map the logit keys to aux keys
+        # for key in logits.keys():
+        #     new_key = 'aux_' + key
+        #     logits[new_key] = logits.pop(key)
+
+        # If there is an aux file, for ana that means an output file.
+        # Call the larcv interface to write data:
+        if FLAGS.LABEL_MODE == 'all':
+            self._larcv_interface.write_output(data=logits, datatype='meta', producer='all')
+        else:
+            for key in logits:
+                self._larcv_interface.write_output(data=logits[key], datatype='meta', producer=key)
+
+        # If the input data has labels available, compute the metrics:
+        if 'label' in minibatch_data:
+            # Compute the loss
+            loss = self._calculate_loss(minibatch_data, logits)
+
+            # Compute the metrics for this iteration:
+            metrics = self._compute_metrics(logits, minibatch_data, loss)
+
+
+            # Add them to the total metrics for this validation step:
+            if total_metrics == {}:
+                total_metrics = metrics
+            else:
+                total_metrics = { total_metrics[key] + metrics[key] for key in metrics}
+
+
+            # Average metrics over the total number of iterations:
             total_metrics = { total_metrics[key] / n_iterations for key in metrics}
 
             self.log(metrics, saver="test")
@@ -659,14 +720,16 @@ class trainercore(object):
                 self.checkpoint()
                 break
 
-            self.val_step()
+            if FLAGS.TRAINING:
+                self.val_step()
+                self.train_step()
+                self.checkpoint()
+            else:
+                self.ana_step()
 
-            self.train_step()
 
-
-            self.checkpoint()
-
-        if self._saver is not None:
-            self._saver.close()
-        if self._aux_saver is not None:
-            self._aux_saver.close()
+        if FLAGS.TRAINING:
+            if self._saver is not None:
+                self._saver.close()
+            if self._aux_saver is not None:
+                self._aux_saver.close()
