@@ -71,6 +71,8 @@ class SparseBasicBlock(nn.Module):
                 filter_stride   = [1,stride,stride],
                 bias            = False)
 
+        self.relu = scn.ReLU()
+
         self.add = scn.AddTable()
 
     def forward(self, x):
@@ -89,7 +91,7 @@ class SparseBasicBlock(nn.Module):
         out = self.add([out, residual])
 
         # # out += residual
-        # out = self.relu(out)
+        out = self.relu(out)
 
         return out
 
