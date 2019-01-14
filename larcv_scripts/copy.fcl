@@ -1,0 +1,30 @@
+
+
+
+ProcessDriver: {
+  Verbosity:       0
+  EnableFilter:    false
+  RandomAccess:    false
+  RandomSeed:      0
+  ProcessType:     []
+  ProcessName:     []
+  StartEntry: 0
+  #NumEntries: 50
+
+
+
+  IOManager: {
+    Verbosity:   2
+    Name:        "IOManager"
+    IOMode:      2
+    OutFileName: "out.root"
+    InputFiles:  []
+    InputDirs:   []
+
+  }
+
+  ProcessList: {
+
+  }
+}
+
