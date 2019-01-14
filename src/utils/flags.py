@@ -112,7 +112,7 @@ class FLAGS(Borg):
         self.AUX_KEYWORD_LABEL         = 'aux_label'
         self.AUX_MINIBATCH_SIZE        = self.MINIBATCH_SIZE
         self.AUX_ITERATION             = 10*self.SUMMARY_ITERATION
-
+        self.OUTPUT_FILE               = None
 
         # These are "background" parameters
         # And are meant to be copied to the 'KEYWORD_LABEL' area
@@ -181,8 +181,7 @@ class FLAGS(Borg):
 
         # train parser
         self.train_parser = subparsers.add_parser("train", help="Train")
-        self.train_parser.add_argument('-ld','--log-directory', default=self.LOG_DIRECTORY,
-                                  help='Prefix (directory + file prefix) for snapshots of weights [default: {}]'.format(self.LOG_DIRECTORY))
+        
         self.train_parser.add_argument('-lr','--learning-rate', type=float, default=self.LEARNING_RATE,
                                   help='Initial learning rate [default: {}]'.format(self.LEARNING_RATE))
         self.train_parser.add_argument('-si','--summary-iteration', type=int, default=self.SUMMARY_ITERATION,
@@ -215,7 +214,8 @@ class FLAGS(Borg):
         self.inference_parser = self._add_default_io_configuration(self.inference_parser)
         self.inference_parser = self._add_aux_io_configuration(self.inference_parser)
         self.inference_parser = self._add_core_configuration(self.inference_parser)
-       
+        self.inference_parser.add_argument('-out','--output-file',type=str,default=self.OUTPUT_FILE,
+            help="Override the destination of output in inference mode [default: {}]".format(self.OUTPUT_FILE))
         # self.inference_parser = self._add_default_parser_configuration(inference_parser)
         # self.iotest_parser    = self._add_default_parser_configuration(iotest_parser)
       
@@ -231,7 +231,8 @@ class FLAGS(Borg):
             help="Selection of compute device, CPU or GPU  [default: {}]".format(self.COMPUTE_MODE))
         parser.add_argument('-im','--image-mode',type=str,choices=['dense', 'sparse'],default=self.IMAGE_MODE,
             help="Input image format to the network, dense or sparse [default: {}]".format(self.IMAGE_MODE))
-
+        parser.add_argument('-ld','--log-directory', default=self.LOG_DIRECTORY,
+            help='Prefix (directory + file prefix) for snapshots of weights [default: {}]'.format(self.LOG_DIRECTORY))
 
         return parser
 

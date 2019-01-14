@@ -84,7 +84,7 @@ class trainercore(object):
                 # Then this is a testing file
                 self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys)
             else:
-                self._larcv_interface.prepare_writer(FLAGS.AUX_FILE)
+                self._larcv_interface.prepare_writer(FLAGS.AUX_FILE, FLAGS.OUTPUT_FILE)
 
 
     def init_network(self):
@@ -162,7 +162,8 @@ class trainercore(object):
     def init_saver(self):
 
         # This sets up the summary saver:
-        self._saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY)
+        if FLAGS.TRAINING:
+            self._saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY)
 
         if FLAGS.AUX_FILE is not None and FLAGS.TRAINING:
             self._aux_saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY + "/test/")
@@ -201,7 +202,11 @@ class trainercore(object):
                     print("Restoring weights from ", chkp_file)
                     break
 
-        state = torch.load(chkp_file)
+        if FLAGS.COMPUTE_MODE == "CPU":
+            state = torch.load(chkp_file, map_location='cpu')
+        else:
+            state = torch.load(chkp_file)
+
 
         self._net.load_state_dict(state['state_dict'])
         self._opt.load_state_dict(state['optimizer'])
@@ -384,11 +389,17 @@ class trainercore(object):
             
             self._current_log_time = datetime.datetime.now()
 
+            s = ""
+
+            if 'it.' in metrics:
+                # This prints out the iteration for ana steps
+                s += "it.: {}, ".format(metrics['it.'])
+
             # Build up a string for logging:
             if self._log_keys != []:
-                s = ", ".join(["{0}: {1:.3}".format(key, metrics[key]) for key in self._log_keys])
+                s += ", ".join(["{0}: {1:.3}".format(key, metrics[key]) for key in self._log_keys])
             else:
-                s = ", ".join(["{0}: {1:.3}".format(key, metrics[key]) for key in metrics])
+                s += ", ".join(["{0}: {1:.3}".format(key, metrics[key]) for key in metrics])
       
 
             try:
@@ -406,6 +417,9 @@ class trainercore(object):
 
 
     def summary(self, metrics,saver=""):
+
+        if self._saver is None:
+            return
 
         if self._global_step % FLAGS.SUMMARY_ITERATION == 0:
             for metric in metrics:
@@ -469,8 +483,13 @@ class trainercore(object):
         self._global_step += 1
         current_epoch = int((self._global_step * FLAGS.MINIBATCH_SIZE) / self._epoch_size)
 
+        self.on_step_end()
+
         if previous_epoch != current_epoch:
             self.on_epoch_end()
+
+    def on_step_end(self):
+        pass
 
     def on_epoch_end(self):
         pass
@@ -627,15 +646,12 @@ class trainercore(object):
             metrics = self._compute_metrics(logits, minibatch_data, loss)
 
 
-            # Average metrics over the total number of iterations:
-            metrics = { key : total_metrics[key] / n_iterations for key in metrics}
-
             self.log(metrics, saver="test")
             self.summary(metrics, saver="test")
 
             return metrics
 
-    def ana_step(self):
+    def ana_step(self, iteration=None):
 
         # First, validation only occurs on training:
         if FLAGS.TRAINING: return
@@ -644,13 +660,10 @@ class trainercore(object):
 
         # Set network to eval mode
         self._net.eval()
-
-
-        total_metrics = {}
+        # self._net.train()
 
         # Fetch the next batch of data with larcv
         minibatch_data = self.fetch_next_batch(metadata=True)
-
 
         # Convert the input data to torch tensors
         minibatch_data = self.to_torch(minibatch_data)
@@ -659,30 +672,34 @@ class trainercore(object):
         with torch.no_grad():
             logits = self._net(minibatch_data['image'])
 
-
-        # # Here, we have to map the logit keys to aux keys
-        # for key in logits.keys():
-        #     new_key = 'aux_' + key
-        #     logits[new_key] = logits.pop(key)
-
         # If there is an aux file, for ana that means an output file.
         # Call the larcv interface to write data:
         if FLAGS.AUX_FILE is not None:
-            writable_logits = numpy.asarray(logits.cpu())
-            self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer='all',
-                entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
+            if FLAGS.LABEL_MODE == 'all':
+                writable_logits = numpy.asarray(logits.cpu())
+                self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer='all',
+                    entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
+            else:
+                for key in logits:
+                    writable_logits = numpy.asarray(logits[key].cpu())
+                    self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer=key,
+                        entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
 
         # If the input data has labels available, compute the metrics:
-        if 'label' in minibatch_data:
+        if (FLAGS.LABEL_MODE == 'all' and 'label' in minibatch_data) or \
+           (FLAGS.LABEL_MODE == 'split' and 'label_neut' in minibatch_data):
             # Compute the loss
             loss = self._calculate_loss(minibatch_data, logits)
 
             # Compute the metrics for this iteration:
             metrics = self._compute_metrics(logits, minibatch_data, loss)
 
+            if iteration is not None:
+                metrics.update({'it.' : iteration})
+
 
             self.log(metrics, saver="test")
-            self.summary(metrics, saver="test")
+            # self.summary(metrics, saver="test")
 
             return metrics
 
@@ -718,7 +735,7 @@ class trainercore(object):
                 self.train_step()
                 self.checkpoint()
             else:
-                self.ana_step()
+                self.ana_step(i)
 
 
         if FLAGS.TRAINING:

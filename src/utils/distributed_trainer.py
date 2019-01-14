@@ -21,6 +21,25 @@ from .trainercore import trainercore
 
 import tensorboardX
 
+
+def lambda_warmup(epoch):
+    # Constant terms:
+    flat_warmup = 50
+    linear_warmup = 500
+    full = 3000
+    size=hvd.size()
+    target = numpy.sqrt(size)
+    # Perform 500 warmup steps, gradually ramping the rate:
+    if epoch <= flat_warmup:
+        return 1.0
+    elif epoch < flat_warmup + linear_warmup:
+        return 1.0 + (target - 1) * (epoch - flat_warmup) / linear_warmup 
+    elif epoch <= flat_warmup + linear_warmup + full:
+        return target
+    else:
+        return target * numpy.exp(-0.001*(epoch-(full+linear_warmup+flat_warmup)))
+
+
 class distributed_trainer(trainercore):
     '''
     This class is the core interface for training.  Each function to
@@ -62,7 +81,6 @@ class distributed_trainer(trainercore):
 
         trainercore.init_optimizer(self)
 
-        lambda_warmup = lambda epoch: 1.0 if epoch < 5 else numpy.sqrt(hvd.size()) if epoch < 30 else 0.1
 
         self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
             self._opt, lambda_warmup, last_epoch=-1)
@@ -171,6 +189,9 @@ class distributed_trainer(trainercore):
         return metrics
 
     def on_epoch_end(self):
+        pass
+
+    def on_step_end(self):
         self._lr_scheduler.step()
 
 
