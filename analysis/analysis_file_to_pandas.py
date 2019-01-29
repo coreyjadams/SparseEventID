@@ -13,7 +13,7 @@ def init_file(file_name):
 
 
 
-def convert_to_pandas(io_manager, mode='split'):
+def convert_to_pandas(io_manager, mode='split', n_entries=None):
     
     # This function reads in the data from larcv, and converts to pandas.  It stores the neutrino energy (true),
     # as well as the true and predicted labels.
@@ -27,10 +27,16 @@ def convert_to_pandas(io_manager, mode='split'):
                    "pred_prot", "pred_prot0", "pred_prot1", "pred_prot2",
                    "true_neut", "true_npi", "true_cpi", "true_prot",
                    "true_mult", "pred_mult",
-                   "energy",]
+                   "energy", "pot"]
     )
     
+    n_written = -1
+
     for i in range(io_manager.get_n_entries()):
+
+        if n_entries is not None:
+            if i > n_entries:
+                break;
 
         io_manager.read_entry(i)
 #         print ("Event ", i)
@@ -50,6 +56,17 @@ def convert_to_pandas(io_manager, mode='split'):
             df.iloc[i-1]['true_prot'] = protID.as_vector().front().pdg_code()
             df.iloc[i-1]['true_mult'] = allID.as_vector().front().pdg_code()
             df.iloc[i-1]['energy']    = neutrino.as_vector().front().energy_init()
+
+            # pot is per event, by truth information:
+            if neutID.as_vector().front().pdg_code() == 0:
+                # nueCC
+                df.iloc[i-1]['pot'] = 1.99e16
+            elif neutID.as_vector().front().pdg_code() == 1:
+                # numuCC
+                df.iloc[i-1]['pot'] = 1.83e14
+            else:  # neutID.as_vector().front().pdg_code() == 2
+                # NC
+                df.iloc[i-1]['pot'] = 5.19e14
 
         if mode == "split":
             label_cpi  = io_manager.get_data("meta", "label_cpi")
@@ -87,7 +104,15 @@ def convert_to_pandas(io_manager, mode='split'):
         else:
             pass
 
-    return df
+        n_written += 1
+
+
+    # Normalize the weights.
+    # We normalize everything to 1e20 POT.  So, sum the POT of each type of neutrino (true)
+    # interaction and set the weight so that it sums to 1e20
+
+
+    return df[0:n_written]
 
 
 # This quickly calculates the accuracy:
@@ -107,7 +132,7 @@ def main():
     print(args)
     
     io_manager = init_file(args.file)
-    df = convert_to_pandas(io_manager)
+    df = convert_to_pandas(io_manager, n_entries=None)
 
     calculate_accuracy(df)
 
