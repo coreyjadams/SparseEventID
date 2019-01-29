@@ -248,10 +248,13 @@ class ResNet(torch.nn.Module):
                     for key in output_shape
                 }
             self.bottleneck  = { 
-                    key : Block(
-                        inplanes  = n_filters, 
-                        outplanes = output_shape[key][-1],
-                        nplanes   = FLAGS.NPLANES)
+                    key : torch.nn.Conv3d(
+                        in_channels  = n_filters, 
+                        out_channels = output_shape[key][-1], 
+                        kernel_size  = [1,1,1], 
+                        stride       = [1,1,1],
+                        padding      = [0,0,0],
+                        bias=False)
                     for key in output_shape
                 }
         
@@ -300,7 +303,6 @@ class ResNet(torch.nn.Module):
             for key in self.final_layer:
                 # Apply the final residual block:
                 output[key] = self.final_layer[key](x)
-
 
                 # Apply the bottle neck to make the right number of output filters:
                 output[key] = self.bottleneck[key](output[key])

@@ -70,16 +70,17 @@ class FLAGS(Borg):
         self.CHECKPOINT_ITERATION  = 100
         self.SUMMARY_ITERATION     = 1
         self.LOGGING_ITERATION     = 1
-        self.LEARNING_RATE         = 0.0001
+        self.LEARNING_RATE         = 0.01
         self.ITERATIONS            = 5000
         self.VERBOSITY             = 0
         self.LOG_DIRECTORY         = './log'
+        self.CHECKPOINT_DIRECTORY  = None
 
         self.DISTRIBUTED           = False
 
         # To be clear, this is specifying the image mode from larcv ThreadIO,
         # Not the input to the network
-        self.IMAGE_MODE            = 'dense' # Can also be 'sparse'
+        self.IMAGE_MODE            = 'sparse' # Can also be 'sparse'
 
         # IO parameters  
         # IO has a 'default' file configuration and an optional
@@ -87,8 +88,7 @@ class FLAGS(Borg):
         # is the training data, aux is testing data.
         # In inference mode, default is the validation data, 
         # aux is the outputdata
-        self.FILE                  = '{}/io/dev/classification_3d_io_all.cfg'.format(top_dir)
-        self.FILLER                = 'DevIO'
+        self.FILE                  = "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/train_event_id.root"
         self.IO_VERBOSITY          = 3
         self.KEYWORD_DATA          = 'data'
         # For this classification task, the label can be split or all-in-one
@@ -96,8 +96,8 @@ class FLAGS(Borg):
 
         # These are "background" parameters
         # And are meant to be copied to the 'KEYWORD_LABEL' area
-        self.KEYWORD_LABEL_ALL     = 'label'
-        self.KEYWORD_LABEL_SPLIT   = ['label_neut','label_cpi','label_npi','label_prot']
+        # self.KEYWORD_LABEL_ALL     = 'label'
+        # self.KEYWORD_LABEL_SPLIT   = ['label_neut','label_cpi','label_npi','label_prot']
 
         self.KEYWORD_LABEL         = None
 
@@ -106,20 +106,19 @@ class FLAGS(Borg):
         # Optional Test IO parameters:
         # To activate the auxilliary IO, the AUX file must be not None
         self.AUX_FILE                  = None
-        self.AUX_FILLER                = 'TestIO'
         self.AUX_IO_VERBOSITY          = 3
-        self.AUX_KEYWORD_DATA          = 'aux_data'
-        self.AUX_KEYWORD_LABEL         = 'aux_label'
+        # self.AUX_KEYWORD_DATA          = 'aux_data'
+        # self.AUX_KEYWORD_LABEL         = 'aux_label'
         self.AUX_MINIBATCH_SIZE        = self.MINIBATCH_SIZE
         self.AUX_ITERATION             = 10*self.SUMMARY_ITERATION
         self.OUTPUT_FILE               = None
 
-        # These are "background" parameters
-        # And are meant to be copied to the 'KEYWORD_LABEL' area
-        self.AUX_KEYWORD_LABEL_ALL     = 'aux_label'
-        self.AUX_KEYWORD_LABEL_SPLIT   = ['aux_label_neut','aux_label_cpi','aux_label_npi','aux_label_prot']
+        # # These are "background" parameters
+        # # And are meant to be copied to the 'KEYWORD_LABEL' area
+        # self.AUX_KEYWORD_LABEL_ALL     = 'aux_label'
+        # self.AUX_KEYWORD_LABEL_SPLIT   = ['aux_label_neut','aux_label_cpi','aux_label_npi','aux_label_prot']
 
-        self.AUX_KEYWORD_LABEL         = None
+        # self.AUX_KEYWORD_LABEL         = None
 
 
 
@@ -128,14 +127,12 @@ class FLAGS(Borg):
         # IO PARAMETERS FOR INPUT:
         parser.add_argument('-f','--file', type=str, default=self.FILE,
             help="IO Configuration File [default: {}]".format(self.FILE))
-        parser.add_argument('--filler', type=str, default=self.FILLER,
-            help="IO Larcv Filler [default: {}]".format(self.FILLER))
         parser.add_argument('--io-verbosity', type=int, default=self.IO_VERBOSITY,
             help="IO verbosity [default: {}]".format(self.IO_VERBOSITY))
-        parser.add_argument('--keyword-data', type=str, default=self.KEYWORD_DATA,
-            help="Keyword for io data access [default: {}]".format(self.KEYWORD_DATA))
-        parser.add_argument('--keyword-label', type=str, default=self.KEYWORD_LABEL,
-            help="Keyword for io label access [default: {}]".format(self.KEYWORD_LABEL))
+        # parser.add_argument('--keyword-data', type=str, default=self.KEYWORD_DATA,
+            # help="Keyword for io data access [default: {}]".format(self.KEYWORD_DATA))
+        # parser.add_argument('--keyword-label', type=str, default=self.KEYWORD_LABEL,
+            # help="Keyword for io label access [default: {}]".format(self.KEYWORD_LABEL))
 
         parser.add_argument('--label-mode', type=str, choices=['split', 'all'], default=self.LABEL_MODE,
             help="Run with split labels (multiple classifiers) or all in one [default: {}]".format(self.LABEL_MODE))
@@ -150,14 +147,12 @@ class FLAGS(Borg):
         # IO PARAMETERS FOR INPUT:
         parser.add_argument('--aux-file', type=str, default=self.AUX_FILE,
             help="IO Configuration File [default: {}]".format(self.AUX_FILE))
-        parser.add_argument('--aux-filler', type=str, default=self.AUX_FILLER,
-            help="IO Larcv Filler [default: {}]".format(self.AUX_FILLER))
         parser.add_argument('--aux-io-verbosity', type=int, default=self.AUX_IO_VERBOSITY,
             help="IO verbosity [default: {}]".format(self.AUX_IO_VERBOSITY))
-        parser.add_argument('--aux-keyword-data', type=str, default=self.AUX_KEYWORD_DATA,
-            help="Keyword for io data access [default: {}]".format(self.AUX_KEYWORD_DATA))
-        parser.add_argument('--aux-keyword-label', type=str, default=self.AUX_KEYWORD_LABEL,
-            help="Keyword for io label access [default: {}]".format(self.AUX_KEYWORD_LABEL))
+        # parser.add_argument('--aux-keyword-data', type=str, default=self.AUX_KEYWORD_DATA,
+        #     help="Keyword for io data access [default: {}]".format(self.AUX_KEYWORD_DATA))
+        # parser.add_argument('--aux-keyword-label', type=str, default=self.AUX_KEYWORD_LABEL,
+        #     help="Keyword for io label access [default: {}]".format(self.AUX_KEYWORD_LABEL))
 
 
         parser.add_argument('--aux-iteration',type=int, default=self.AUX_ITERATION,
@@ -277,12 +272,12 @@ class FLAGS(Borg):
             setattr(self, name.upper(), args[name])
         # Take special care to reset the keyword label attribute 
         # to match the label mode:
-        if self.LABEL_MODE == "split":
-            self.KEYWORD_LABEL = self.KEYWORD_LABEL_SPLIT
-            self.AUX_KEYWORD_LABEL = self.AUX_KEYWORD_LABEL_SPLIT
-        elif self.LABEL_MODE == "all":
-            self.KEYWORD_LABEL = self.KEYWORD_LABEL_ALL
-            self.AUX_KEYWORD_LABEL = self.AUX_KEYWORD_LABEL_ALL
+        # if self.LABEL_MODE == "split":
+        #     self.KEYWORD_LABEL = self.KEYWORD_LABEL_SPLIT
+        #     # self.AUX_KEYWORD_LABEL = self.AUX_KEYWORD_LABEL_SPLIT
+        # elif self.LABEL_MODE == "all":
+        #     self.KEYWORD_LABEL = self.KEYWORD_LABEL_ALL
+        #     # self.AUX_KEYWORD_LABEL = self.AUX_KEYWORD_LABEL_ALL
 
     def _add_default_network_configuration(self, parser):
         raise NotImplementedError("Must use a derived class which overrides this function")
@@ -313,6 +308,8 @@ class resnet(FLAGS):
         self.WEIGHT_DECAY               = 1e-4
 
         self.SPARSE                     = False
+
+        self.INPUT_DIMENSION            = '2D' 
 
         FLAGS._set_defaults(self)
 
@@ -367,6 +364,7 @@ class resnet3D(FLAGS):
         self.NETWORK_DEPTH         = 5
         self.WEIGHT_DECAY          = 1e-4
         self.SPARSE                = False
+        self.INPUT_DIMENSION       = '3D' 
 
         FLAGS._set_defaults(self)
 

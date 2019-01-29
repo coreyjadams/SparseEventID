@@ -235,12 +235,11 @@ class ResNet(torch.nn.Module):
                 nplanes=FLAGS.NPLANES)
             spatial_size /= 2
 
-            self.bottleneck = scn.Convolution(dimension=3, 
-                        nIn             = n_filters,
-                        nOut            = output_shape[-1],
-                        filter_size     = [FLAGS.NPLANES,spatial_size,spatial_size],
-                        filter_stride   = [1,1,1],
-                        bias            = False)
+            self.bottleneck = scn.SubmanifoldConvolution(dimension=3, 
+                        nIn=n_filters, 
+                        nOut=output_shape[-1], 
+                        filter_size=1, 
+                        bias=False)
 
             self.sparse_to_dense = scn.SparseToDense(dimension=3, nPlanes=output_shape[-1])
         else:
@@ -254,10 +253,11 @@ class ResNet(torch.nn.Module):
                 }
             spatial_size /= 2
             self.bottleneck  = { 
-                    key : SparseBlock(
-                        inplanes  = n_filters, 
-                        outplanes = output_shape[key][-1],
-                        nplanes   = FLAGS.NPLANES)
+                    key : scn.SubmanifoldConvolution(dimension=3, 
+                        nIn=n_filters, 
+                        nOut=output_shape[key][-1], 
+                        filter_size=1, 
+                        bias=False)
                     for key in output_shape
                 }
             self.sparse_to_dense = {

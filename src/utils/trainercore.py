@@ -1,4 +1,5 @@
 import os
+import tempfile
 import sys
 import time
 from collections import OrderedDict
@@ -11,6 +12,7 @@ from larcv import larcv_interface
 
 from . import flags
 from . import data_transforms
+from . import io_templates
 FLAGS = flags.FLAGS()
 
 import datetime
@@ -31,60 +33,97 @@ class trainercore(object):
         self._iteration       = 0
         self._global_step     = -1
 
+        self._cleanup         = []
+
+    def __del__(self):
+        for f in self._cleanup:
+            os.unlink(f.name)
+            
+
     def _initialize_io(self):
+
+        # Use the templates to generate a configuration string, which we store into a temporary file
+        if FLAGS.TRAINING:
+            config = io_templates.train_io(input_file=FLAGS.FILE, image_dim=FLAGS.INPUT_DIMENSION, 
+                label_mode=FLAGS.LABEL_MODE)
+        else:
+            config = io_templates.ana_io(input_file=FLAGS.FILE, max_voxels=max_voxels)
+
+
+        # Generate a named temp file:
+        main_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        main_file.write(config.generate_config_str())
+
+        main_file.close()
+        self._cleanup.append(main_file)
 
         # Prepare data managers:
         io_config = {
-            'filler_name' : FLAGS.FILLER,
-            'filler_cfg'  : FLAGS.FILE,
+            'filler_name' : config._name,
+            'filler_cfg'  : main_file.name,
             'verbosity'   : FLAGS.VERBOSITY,
             'make_copy'   : True
         }
 
+        # Build up the data_keys:
+        data_keys = OrderedDict()
+        data_keys['image'] = 'data'
+        for proc in config._process_list._processes:
+            if proc._name == 'data': 
+                continue
+            else:
+                data_keys[proc._name] = proc._name
+
+        # Assign the keywords here:
         if FLAGS.LABEL_MODE == 'all':
-
-            data_keys = OrderedDict({
-                'image': FLAGS.KEYWORD_DATA, 
-                'label': FLAGS.KEYWORD_LABEL
-                })
+            FLAGS.KEYWORD_LABEL = 'label'
         else:
-            data_keys = OrderedDict({
-                'image': FLAGS.KEYWORD_DATA,
-                })
-            for label in FLAGS.KEYWORD_LABEL:
-                data_keys.update({label : label})
-
+            FLAGS.KEYWORD_LABEL = []
+            for key in data_keys.keys():
+                if key != 'image':
+                    FLAGS.KEYWORD_LABEL.append(key)
 
         self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys)
 
         # All of the additional tools are in case there is a test set up:
         if FLAGS.AUX_FILE is not None:
 
+
             if FLAGS.TRAINING:
+                config = io_templates.test_io(input_file=FLAGS.AUX_FILE, image_dim=FLAGS.INPUT_DIMENSION, 
+                    label_mode=FLAGS.LABEL_MODE)
+
+                # Generate a named temp file:
+                aux_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+                aux_file.write(config.generate_config_str())
+                # print([proc._name for proc in config._process_list._processes])
+
+                aux_file.close()
+                self._cleanup.append(aux_file)
                 io_config = {
-                    'filler_name' : FLAGS.AUX_FILLER,
-                    'filler_cfg'  : FLAGS.AUX_FILE,
+                    'filler_name' : config._name,
+                    'filler_cfg'  : aux_file.name,
                     'verbosity'   : FLAGS.VERBOSITY,
                     'make_copy'   : True
                 }
 
-                if FLAGS.LABEL_MODE == 'all':
+                # Build up the data_keys:
+                data_keys = OrderedDict()
+                data_keys['image'] = 'aux_data'
+                for proc in config._process_list._processes:
+                    if proc._name == 'aux_data': 
+                        continue
+                    else:
+                        data_keys[proc._name] = proc._name
 
-                    data_keys = OrderedDict({
-                        'image': FLAGS.AUX_KEYWORD_DATA, 
-                        'label': FLAGS.AUX_KEYWORD_LABEL
-                        })
-                else:
-                    data_keys = OrderedDict({
-                        'image': FLAGS.AUX_KEYWORD_DATA,
-                        })
-                    for label in FLAGS.AUX_KEYWORD_LABEL:
-                        data_keys.update({label : label})
 
-                # Then this is a testing file
+
                 self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys)
+
             else:
+                config = io_templates.ana_io(input_file=FLAGS.FILE, max_voxels=max_voxels)
                 self._larcv_interface.prepare_writer(FLAGS.AUX_FILE, FLAGS.OUTPUT_FILE)
+
 
 
     def init_network(self):
@@ -124,6 +163,12 @@ class trainercore(object):
 
         self.init_saver()
 
+        state = self.restore_model()
+
+        if state is not None:
+            self.load_state(state)
+        else:
+            self._global_step = 0
 
 
         if FLAGS.COMPUTE_MODE == "CPU":
@@ -135,7 +180,7 @@ class trainercore(object):
             self._log_keys = ['loss', 'accuracy']
         elif FLAGS.LABEL_MODE == 'split':
             self._log_keys = ['loss']
-            for key in FLAGS.KEYWORD_LABEL_SPLIT: 
+            for key in FLAGS.KEYWORD_LABEL: 
                 self._log_keys.append('acc/{}'.format(key))
 
 
@@ -180,8 +225,6 @@ class trainercore(object):
         # self._saver.add_graph(self._net, (dummy_input,))
 
         # Here, either restore the weights of the network or initialize it:
-        self._global_step = 0
-        self.restore_model()
 
 
     def restore_model(self):
@@ -191,7 +234,7 @@ class trainercore(object):
         _, checkpoint_file_path = self.get_model_filepath()
 
         if not os.path.isfile(checkpoint_file_path):
-            return
+            return None
         # Parse the checkpoint file and use that to get the latest file path
 
         with open(checkpoint_file_path, 'r') as _ckp:
@@ -207,6 +250,10 @@ class trainercore(object):
         else:
             state = torch.load(chkp_file)
 
+        return state
+
+    def load_state(self, state):
+
 
         self._net.load_state_dict(state['state_dict'])
         self._opt.load_state_dict(state['optimizer'])
@@ -219,7 +266,8 @@ class trainercore(object):
                     if torch.is_tensor(v):
                         state[k] = v.cuda()
 
-        return
+        return True
+
 
     def save_model(self):
         '''Save the model to file
@@ -283,40 +331,16 @@ class trainercore(object):
         '''
 
         # Find the base path of the log directory
-        file_path= FLAGS.LOG_DIRECTORY  + "/checkpoints/"
+        if FLAGS.CHECKPOINT_DIRECTORY == None:
+            file_path= FLAGS.LOG_DIRECTORY  + "/checkpoints/"
+        else:
+            file_path= FLAGS.CHECKPOINT_DIRECTORY  + "/checkpoints/"
 
 
         name = file_path + 'model-{}.ckpt'.format(self._global_step)
         checkpoint_file_path = file_path + "checkpoint"
 
         return name, checkpoint_file_path
-
-    def _create_softmax(self, logits):
-        '''Must return a dict type
-
-        [description]
-
-        Arguments:
-            logits {[type]} -- [description]
-
-        Raises:
-            NotImplementedError -- [description]
-        '''
-
-        # For the logits, we compute the softmax and the predicted label
-
-
-        output = dict()
-
-        # Take the logits (which are one per plane) and create a softmax and prediction (one per plane)
-
-        output['softmax'] = nn.softmax(logits)
-        output['prediction'] = nn.argmax(logits, axis=1)
-
-
-        return output
-
-
 
     def _calculate_loss(self, inputs, logits):
         ''' Calculate the loss.
@@ -437,6 +461,9 @@ class trainercore(object):
 
     def fetch_next_batch(self, mode='primary', metadata=False):
 
+        # For the serial mode, call next here:
+        if not FLAGS.DISTRIBUTED:
+            self._larcv_interface.next(mode)
         minibatch_data = self._larcv_interface.fetch_minibatch_data(mode, fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(mode)
 
@@ -547,6 +574,7 @@ class trainercore(object):
         io_end_time = datetime.datetime.now()
 
         minibatch_data = self.to_torch(minibatch_data)
+
         # Run a forward pass of the model on the input image:
         logits = self._net(minibatch_data['image'])
 
@@ -672,16 +700,27 @@ class trainercore(object):
         with torch.no_grad():
             logits = self._net(minibatch_data['image'])
 
+        if FLAGS.LABEL_MODE == 'all':
+            softmax = torch.nn.Softmax(dim=-1)(logits)
+        else:
+            softmax = { key : torch.nn.Softmax(dim=-1)(logits[key]) for key in logits } 
+
+        # print('label_neut', minibatch_data['label_neut'])
+        # print('label_npi', minibatch_data['label_npi'])
+        # print('label_cpi', minibatch_data['label_cpi'])
+        # print('label_prot', minibatch_data['label_prot'])
+        # print(softmax)
+
         # If there is an aux file, for ana that means an output file.
         # Call the larcv interface to write data:
         if FLAGS.AUX_FILE is not None:
             if FLAGS.LABEL_MODE == 'all':
-                writable_logits = numpy.asarray(logits.cpu())
+                writable_logits = numpy.asarray(softmax.cpu())
                 self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer='all',
                     entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
             else:
-                for key in logits:
-                    writable_logits = numpy.asarray(logits[key].cpu())
+                for key in softmax:
+                    writable_logits = numpy.asarray(softmax[key].cpu())
                     self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer=key,
                         entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
 

@@ -24,9 +24,9 @@ import tensorboardX
 
 def lambda_warmup(epoch):
     # Constant terms:
-    flat_warmup = 50
+    flat_warmup = 100
     linear_warmup = 500
-    full = 3000
+    full = 5000
     size=hvd.size()
     target = numpy.sqrt(size)
     # Perform 500 warmup steps, gradually ramping the rate:
@@ -61,12 +61,18 @@ class distributed_trainer(trainercore):
         self._larcv_interface = larcv_interface(root=root_rank)
         self._iteration       = 0
         self._rank            = hvd.rank()
+        self._cleanup         = []
+        self._global_step     = torch.as_tensor(-1)
 
         if self._rank == 0:
             FLAGS.dump_config()
         # Make sure that 'LEARNING_RATE' and 'TRAINING'
         # are in net network parameters:
 
+
+    def __del__(self):
+        if hvd.rank() == 0:
+            trainercore.__del__(self)
 
     def save_model(self):
 
@@ -97,6 +103,17 @@ class distributed_trainer(trainercore):
             self._aux_saver = None
 
 
+    def restore_model(self):
+        if hvd.rank() == 0:
+            state = trainercore.restore_model(self)
+
+            if state is not None:
+                self.load_state(state)
+            else:
+                self._global_step = torch.as_tensor(0)
+        return
+
+
     def initialize(self, io_only = False):
 
         print("HVD rank: {}".format(hvd.rank()))
@@ -115,7 +132,6 @@ class distributed_trainer(trainercore):
         else:
             output_shape = dims[FLAGS.KEYWORD_LABEL]
 
-
         self._net = FLAGS._net(output_shape)
 
 
@@ -133,30 +149,27 @@ class distributed_trainer(trainercore):
         self.init_optimizer()
 
         self.init_saver()
-        # hooks = self.get_standard_hooks()
 
+        # If restoring, this will restore the model on the root node
+        self.restore_model()
+        
+        self._global_step = hvd.broadcast(self._global_step, root_rank = 0)
 
-        # Here, either restore the weights of the network or initialize it:
-        self._global_step = 0
-        # Restore the state from the root rank:
-        # if hvd.rank() == 0:
-        #     self.restore_model()
-
-        # Broadcast the state of the model:
-        # print(self._net.state_dict().keys())
-        # print(self._opt.state_dict()['state'])
+        # Now broadcast the model to syncronize the optimizer and model:
         hvd.broadcast_parameters(self._net.state_dict(), root_rank = 0)
-        # hvd.broadcast_parameters(self._global_step, root_rank = 0)
+        hvd.broadcast_optimizer_state(self._opt, root_rank = 0)
 
-        # Broadcast the state of the optimizer?
 
         if FLAGS.COMPUTE_MODE == "CPU":
             pass
         if FLAGS.COMPUTE_MODE == "GPU":
             self._net.cuda()
-            # self._opt.cuda()
+            # This moves the optimizer to the GPU:
+            for state in self._opt.state.values():
+                for k, v in state.items():
+                    if torch.is_tensor(v):
+                        state[k] = v.cuda()
             
-        hvd.broadcast_optimizer_state(self._opt, root_rank = 0)
 
         print("Rank ", hvd.rank(), next(self._net.parameters()).device)
 
@@ -164,7 +177,7 @@ class distributed_trainer(trainercore):
             self._log_keys = ['loss', 'accuracy']
         elif FLAGS.LABEL_MODE == 'split':
             self._log_keys = ['loss']
-            for key in FLAGS.KEYWORD_LABEL_SPLIT: 
+            for key in FLAGS.KEYWORD_LABEL: 
                 self._log_keys.append('acc/{}'.format(key))
 
 
