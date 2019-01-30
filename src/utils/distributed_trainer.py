@@ -22,11 +22,19 @@ from .trainercore import trainercore
 import tensorboardX
 
 
-def lambda_warmup(epoch):
+def lambda_warmup(step):
+
+    # This function actually ignores the input and uses the global step variable
+    # This allows it to get the learning rate correct after restore.
+
+    # For this problem, the dataset size is 1e5.
+    # So the epoch can be calculated easily:
+    epoch = (step * FLAGS.MINIBATCH_SIZE) / (1e5)
+
     # Constant terms:
-    flat_warmup = 100
-    linear_warmup = 500
-    full = 5000
+    flat_warmup = 1
+    linear_warmup = 1
+    full = 5
     size=hvd.size()
     target = numpy.sqrt(size)
     # Perform 500 warmup steps, gradually ramping the rate:
@@ -38,6 +46,7 @@ def lambda_warmup(epoch):
         return target
     else:
         return target * numpy.exp(-0.001*(epoch-(full+linear_warmup+flat_warmup)))
+
 
 
 class distributed_trainer(trainercore):
@@ -92,6 +101,8 @@ class distributed_trainer(trainercore):
             self._opt, lambda_warmup, last_epoch=-1)
 
         self._opt = hvd.DistributedOptimizer(self._opt, named_parameters=self._net.named_parameters())
+
+
 
 
 
@@ -155,6 +166,14 @@ class distributed_trainer(trainercore):
         
         self._global_step = hvd.broadcast(self._global_step, root_rank = 0)
 
+        # This is important to ensure LR continuity after restoring:
+        # Step the learning rate scheduler up to the right amount
+        if self._global_step > 0:
+            i = 0
+            while i < self._global_step:
+                self._lr_scheduler.step()
+                i += 1
+
         # Now broadcast the model to syncronize the optimizer and model:
         hvd.broadcast_parameters(self._net.state_dict(), root_rank = 0)
         hvd.broadcast_optimizer_state(self._opt, root_rank = 0)
@@ -206,6 +225,7 @@ class distributed_trainer(trainercore):
 
     def on_step_end(self):
         self._lr_scheduler.step()
+        # pass
 
 
     def to_torch(self, minibatch_data):

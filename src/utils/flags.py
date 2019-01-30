@@ -227,7 +227,9 @@ class FLAGS(Borg):
         parser.add_argument('-im','--image-mode',type=str,choices=['dense', 'sparse'],default=self.IMAGE_MODE,
             help="Input image format to the network, dense or sparse [default: {}]".format(self.IMAGE_MODE))
         parser.add_argument('-ld','--log-directory', default=self.LOG_DIRECTORY,
-            help='Prefix (directory + file prefix) for snapshots of weights [default: {}]'.format(self.LOG_DIRECTORY))
+            help='Prefix (directory) for logging information [default: {}]'.format(self.LOG_DIRECTORY))
+        parser.add_argument('-cd','--checkpoint-directory', default=self.CHECKPOINT_DIRECTORY,
+            help='Prefix (directory + file prefix) for snapshots of weights [default: {}]'.format(self.CHECKPOINT_DIRECTORY))
 
         return parser
 

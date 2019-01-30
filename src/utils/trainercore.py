@@ -749,6 +749,9 @@ class trainercore(object):
 
     def checkpoint(self):
 
+        if FLAGS.CHECKPOINT_ITERATION == -1:
+            return
+
         if self._global_step % FLAGS.CHECKPOINT_ITERATION == 0 and self._global_step != 0:
             # Save a checkpoint, but don't do it on the first pass
             self.save_model()
