@@ -5,10 +5,15 @@ def build_arg_list(**kwargs):
 
     s = ""
     for key in kwargs:
-        s += "--{key} value ".format(key, kwargs[key])
+        if key =='d' or key =='distributed':
+            s += "-d "
+        elif key =='sparse':
+            s += "--sparse "
+        else:
+            s += "--{key} {value} ".format(key=key.replace("_","-"), value=kwargs[key])
     return s
 
-def spawn_training_job(num_nodes, walltime, name, workflow, dimension, args=None, **kwargs):
+def spawn_training_job(num_nodes, wall_time_minutes, name, workflow, dimension, args=None, **kwargs):
 
     # There are two optional inputs here.
     # First, args can be passed in a completed form, which is useful for re-spawning a training job 
@@ -20,7 +25,7 @@ def spawn_training_job(num_nodes, walltime, name, workflow, dimension, args=None
     # TODO: verify kwargs work
 
     if args is None:
-        args = build_arg_list(kwargs)
+        args = build_arg_list(**kwargs)
 
     if dimension == '2D':
         app = 'event-ID-2D-train'
@@ -35,14 +40,14 @@ def spawn_training_job(num_nodes, walltime, name, workflow, dimension, args=None
             ranks_per_node      = 2,
             threads_per_rank    = 1,
             environ_vars        = "PYTHONPATH:\"\"",
-            wall_time_minutes   = walltime,
+            wall_time_minutes   = wall_time_minutes,
             args                = args,
             application         = app
         )
 
     return job
 
-def spawn_inference_job(num_nodes, walltime, name, workflow, dimension, args=None, **kwargs):
+def spawn_inference_job(num_nodes, wall_time_minutes, name, workflow, dimension, args=None, **kwargs):
 
     # There are two optional inputs here.
     # First, args can be passed in a completed form, which is useful for re-spawning a training job 
@@ -69,10 +74,9 @@ def spawn_inference_job(num_nodes, walltime, name, workflow, dimension, args=Non
             ranks_per_node      = 2,
             threads_per_rank    = 1,
             environ_vars        = "PYTHONPATH:\"\"",
-            wall_time_minutes   = walltime,
+            wall_time_minutes   = wall_time_minutes,
             args                = args,
             application         = app
         )
 
     return job
-    
