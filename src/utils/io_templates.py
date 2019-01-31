@@ -48,7 +48,7 @@ def test_io(input_file, image_dim, label_mode, prepend_names="aux_"):
     return config
 
 
-def ana_io(input_file, image_dim, prepend_names=""):
+def ana_io(input_file, image_dim, label_mode, prepend_names=""):
     if image_dim == "2D":
         max_voxels = 10000
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"sbndwire\"", max_voxels=max_voxels)
@@ -60,8 +60,10 @@ def ana_io(input_file, image_dim, prepend_names=""):
     label_proc = gen_label_filler(label_mode, prepend_names)
 
 
-    config = larcv_io.ThreadIOConfig(name="TestIO")
+    config = larcv_io.ThreadIOConfig(name="AnaIO")
+    # Force ana files to go in order:
 
+    config._params['RandomAccess'] = "0"
     config.add_process(data_proc)
     for l in label_proc:
         config.add_process(l)
@@ -69,6 +71,28 @@ def ana_io(input_file, image_dim, prepend_names=""):
     config.set_param("InputFiles", input_file)
 
     return config
+
+def output_io(input_file, output_file):
+
+
+
+
+    config = larcv_io.IOManagerConfig(name="IOManager")
+    # Force ana files to go in order:
+
+    config._params['RandomAccess'] = "0"
+
+    config.set_param("InputFiles", input_file)
+    config.set_param("OutputFile", output_file)
+
+    # These lines slim down the output file.
+    # Without them, 25 output events is 2.8M and takes 38s
+    # With the, 25 output events is 119K and takes 36s
+    config.set_param("ReadOnlyType", "[\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\"]")  
+    config.set_param("ReadOnlyName", "[\"sb ndneutrino\",\"sbndsegmerged\",\"cpiID\",\"neutID\",\"npiID\",\"protID\",\"all\"]")  
+
+    return config
+
 
 def gen_sparse2d_data_filler(name, producer, max_voxels):
 

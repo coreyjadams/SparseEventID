@@ -238,7 +238,7 @@ class FLAGS(Borg):
     def parse_args(self):
         self._set_defaults()
         self._create_parsers()
-        args = self._parser.parse_args()
+        args, unknown = self._parser.parse_known_args()
         self.update(vars(args))
 
         if self.MODE == 'inference':

@@ -47,7 +47,8 @@ class trainercore(object):
             config = io_templates.train_io(input_file=FLAGS.FILE, image_dim=FLAGS.INPUT_DIMENSION, 
                 label_mode=FLAGS.LABEL_MODE)
         else:
-            config = io_templates.ana_io(input_file=FLAGS.FILE, max_voxels=max_voxels)
+            config = io_templates.ana_io(input_file=FLAGS.FILE, image_dim=FLAGS.INPUT_DIMENSION,
+                label_mode=FLAGS.LABEL_MODE)
 
 
         # Generate a named temp file:
@@ -85,6 +86,9 @@ class trainercore(object):
 
         self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys)
 
+        if not FLAGS.TRAINING:
+            self._larcv_interface._dataloaders['primary'].set_next_index(0)
+
         # All of the additional tools are in case there is a test set up:
         if FLAGS.AUX_FILE is not None:
 
@@ -120,9 +124,18 @@ class trainercore(object):
 
                 self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys)
 
-            else:
-                config = io_templates.ana_io(input_file=FLAGS.FILE, max_voxels=max_voxels)
-                self._larcv_interface.prepare_writer(FLAGS.AUX_FILE, FLAGS.OUTPUT_FILE)
+        if FLAGS.OUTPUT_FILE is not None:
+            if not FLAGS.TRAINING:
+                config = io_templates.output_io(input_file=FLAGS.FILE, output_file=FLAGS.OUTPUT_FILE)
+                
+                out_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+                out_file.write(config.generate_config_str())
+                print(config.generate_config_str())
+
+                out_file.close()
+                self._cleanup.append(out_file)
+
+                self._larcv_interface.prepare_writer(out_file.name, FLAGS.OUTPUT_FILE)
 
 
 
@@ -693,6 +706,7 @@ class trainercore(object):
         # Fetch the next batch of data with larcv
         minibatch_data = self.fetch_next_batch(metadata=True)
 
+
         # Convert the input data to torch tensors
         minibatch_data = self.to_torch(minibatch_data)
         
@@ -711,9 +725,8 @@ class trainercore(object):
         # print('label_prot', minibatch_data['label_prot'])
         # print(softmax)
 
-        # If there is an aux file, for ana that means an output file.
         # Call the larcv interface to write data:
-        if FLAGS.AUX_FILE is not None:
+        if FLAGS.OUTPUT_FILE is not None:
             if FLAGS.LABEL_MODE == 'all':
                 writable_logits = numpy.asarray(softmax.cpu())
                 self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer='all',
@@ -763,6 +776,11 @@ class trainercore(object):
         self._epoch_size = self._larcv_interface.size('primary')
 
         # This is the 'master' function, so it controls a lot
+
+        # If we're not training, force the number of iterations to the epoch size or less
+        if not FLAGS.TRAINING:
+            if FLAGS.ITERATIONS > self._epoch_size:
+                FLAGS.ITERATIONS = self._epoch_size
 
 
         # Run iterations
