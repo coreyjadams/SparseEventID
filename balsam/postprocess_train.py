@@ -107,6 +107,9 @@ def quantify_overtraining(minibatch_size, train_loss, test_loss, train_steps, te
 
     print(max_step)
 
+    # This forces an inference job:
+    return 2
+
     # If this job has exceeded 20 epochs (20 * 1e5 = 3M events)
     # then stop
 
@@ -185,7 +188,9 @@ def generic_parser():
     parser.add_argument('-lr','--learning-rate', default=LOG_DIRECTORY,
             help='Prefix (directory + file prefix) for snapshots of weights [default: {}]'.format(LOG_DIRECTORY))
     parser.add_argument('-f','--file', default=FILE,
-            help='Prefix (directory + file prefix) for snapshots of weights [default: {}]'.format(FILE))
+            help='input file [default: {}]'.format(FILE))
+    parser.add_argument('-cd', '--checkpoint-directory', type=str, default=None,
+            help='Prefix for the weights, also where inference files will be stored')
 
     print("Trying to parse the following args for the logdir:")
     print(dag.current_job.args)
@@ -213,7 +218,7 @@ def postprocess_training():
     train_steps, train_loss, test_steps, test_loss = tabulate_events(args.log_directory)
 
     value = quantify_overtraining(
-        batch_size=args.minibatch_size,
+        minibatch_size=args.minibatch_size,
         train_loss=train_loss, 
         test_loss=test_loss, 
         train_steps=train_steps, 
@@ -271,7 +276,47 @@ def postprocess_training():
     elif value == 2:
 
         # Inference files:
-        
+        inference_files = [
+        "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/val_event_id_1_of_8.root",
+        "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/val_event_id_2_of_8.root",
+        "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/val_event_id_3_of_8.root",
+        "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/val_event_id_4_of_8.root",
+        "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/val_event_id_5_of_8.root",
+        "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/val_event_id_6_of_8.root",
+        "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/val_event_id_7_of_8.root",
+        "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/val_event_id_8_of_8.root",
+        ]
+
+        for i, _file in enumerate(inference_files):
+            basename = os.path.basename(_file)
+            basename = basename.replace('.root', '_out.root')
+            out_file = args.checkpoint_directory + basename
+
+            args.file = _file
+            args.minibatch_size = 1
+            args.iterations = 10
+
+            new_args = " ".join(unknown)
+            for key in vars(args):
+                new_args += "--{key} {value} ".format(key=key.replace("_", "-"), value=getattr(args,key))
+
+            # Add the output file
+            new_args += "--output-file {}".format(out_file)
+
+            print(new_args)
+
+            next_job = spawn_inference_job(
+                num_nodes = dag.current_job.num_nodes, 
+                wall_time_minutes = dag.current_job.wall_time_minutes, 
+                name = dag.current_job.name + "I{}".format(i), 
+                workflow = dag.current_job.workflow, 
+                dimension = dimension, 
+                args=new_args
+            )
+
+            dag.add_dependency(dag.current_job, next_job)
+
+            break
 
         print("Spawn inference jobs")
 

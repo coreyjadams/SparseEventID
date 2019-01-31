@@ -30,7 +30,7 @@ def spawn_training_job(num_nodes, wall_time_minutes, name, workflow, dimension, 
     if dimension == '2D':
         app = 'event-ID-2D-train'
     else:
-        app = 'event-ID-2D-train'
+        app = 'event-ID-3D-train'
 
     job = dag.add_job(
             name                = name,
@@ -64,7 +64,7 @@ def spawn_inference_job(num_nodes, wall_time_minutes, name, workflow, dimension,
     if dimension == '2D':
         app = 'event-ID-2D-inference'
     else:
-        app = 'event-ID-2D-inference'
+        app = 'event-ID-3D-inference'
 
     job = dag.add_job(
             name                = name,
