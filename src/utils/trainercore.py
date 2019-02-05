@@ -498,19 +498,19 @@ class trainercore(object):
             pass
         elif FLAGS.IMAGE_MODE == 'dense' and FLAGS.SPARSE:
             # Have to convert the input image from dense to sparse format:
-            if '3d' in FLAGS.FILE:
+            if FLAGS.INPUT_DIMENSION == '3D':
                 minibatch_data['image'] = data_transforms.larcvdense_to_scnsparse_3d(minibatch_data['image'])
             else:
                 minibatch_data['image'] = data_transforms.larcvdense_to_scnsparse_2d(minibatch_data['image'])
         elif FLAGS.IMAGE_MODE == 'sparse' and not FLAGS.SPARSE:
             # Need to convert sparse larcv into a dense numpy array:
-            if '3d' in FLAGS.FILE:
+            if FLAGS.INPUT_DIMENSION == '3D':
                 minibatch_data['image'] = data_transforms.larcvsparse_to_dense_3d(minibatch_data['image'])
             else:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_dense_2d(minibatch_data['image'])
 
         elif FLAGS.IMAGE_MODE == 'sparse' and FLAGS.SPARSE:
-            if '3d' in FLAGS.FILE:
+            if FLAGS.INPUT_DIMENSION == '3D':
                 minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_3d(minibatch_data['image'])
             else:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_2d(minibatch_data['image'])
@@ -551,7 +551,7 @@ class trainercore(object):
             if key == 'entries' or key =='event_ids':
                 continue
             if key == 'image' and FLAGS.SPARSE:
-                if '3d' in FLAGS.FILE:
+                if FLAGS.INPUT_DIMENSION == '3D':
                     minibatch_data['image'] = (
                             torch.tensor(minibatch_data['image'][0]).long(),
                             torch.tensor(minibatch_data['image'][1], device=device),

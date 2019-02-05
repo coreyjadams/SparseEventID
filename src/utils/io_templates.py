@@ -10,7 +10,7 @@ def train_io(input_file, image_dim, label_mode, prepend_names=""):
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"sbndwire\"", max_voxels=max_voxels)
     else:
         max_voxels = 15000
-        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndwire\"", max_voxels=max_voxels)
+        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
 
     label_proc = gen_label_filler(label_mode, prepend_names)
 
@@ -32,7 +32,7 @@ def test_io(input_file, image_dim, label_mode, prepend_names="aux_"):
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"sbndwire\"", max_voxels=max_voxels)
     else:
         max_voxels = 15000
-        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndwire\"", max_voxels=max_voxels)
+        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
 
     label_proc = gen_label_filler(label_mode, prepend_names)
 
@@ -54,7 +54,7 @@ def ana_io(input_file, image_dim, label_mode, prepend_names=""):
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"sbndwire\"", max_voxels=max_voxels)
     else:
         max_voxels = 15000
-        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndwire\"", max_voxels=max_voxels)
+        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
 
 
     label_proc = gen_label_filler(label_mode, prepend_names)
@@ -111,7 +111,7 @@ def gen_sparse2d_data_filler(name, producer, max_voxels):
 
 def gen_sparse3d_data_filler(name, producer, max_voxels):
 
-    proc = larcv_io.ProcessConfig(proc_name=name, proc_type="BatchFillerSparseTensor2D")
+    proc = larcv_io.ProcessConfig(proc_name=name, proc_type="BatchFillerSparseTensor3D")
 
     proc.set_param("Verbosity",         "3")
     proc.set_param("Tensor3DProducer",  producer)
