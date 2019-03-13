@@ -139,6 +139,9 @@ class SparseBlockSeries(torch.nn.Module):
 
 
 
+def filter_increase(input_filters):
+    # return input_filters * 2
+    return input_filters + FLAGS.N_INITIAL_FILTERS
 
 
 class ResNet(torch.nn.Module):
@@ -172,6 +175,7 @@ class ResNet(torch.nn.Module):
 
         self.pre_convolutional_layers = []
         for layer in range(FLAGS.NETWORK_DEPTH_PRE_MERGE):
+            out_filters = filter_increase(n_filters)
 
             self.pre_convolutional_layers.append(
                 SparseBlockSeries(inplanes = n_filters, 
@@ -181,11 +185,11 @@ class ResNet(torch.nn.Module):
                 )
             self.pre_convolutional_layers.append(
                 SparseConvolutionDownsample(inplanes=n_filters,
-                    outplanes = n_filters + FLAGS.N_INITIAL_FILTERS,
+                    outplanes = out_filters,
                     nplanes = 1)
                 )
+            n_filters = out_filters
 
-            n_filters += FLAGS.N_INITIAL_FILTERS
             spatial_size /= 2
             self.add_module("pre_merge_conv_{}".format(layer), 
                 self.pre_convolutional_layers[-2])
@@ -193,11 +197,11 @@ class ResNet(torch.nn.Module):
                 self.pre_convolutional_layers[-1])
 
 
-        # This operation takes the list of features and locations and merges them
 
         # n_filters *= FLAGS.NPLANES
         self.post_convolutional_layers = []
         for layer in range(FLAGS.NETWORK_DEPTH_POST_MERGE):
+            out_filters = filter_increase(n_filters)
 
             self.post_convolutional_layers.append(
                 SparseBlockSeries(
@@ -209,11 +213,11 @@ class ResNet(torch.nn.Module):
             self.post_convolutional_layers.append(
                 SparseConvolutionDownsample(
                     inplanes  = n_filters,
-                    outplanes = n_filters + FLAGS.N_INITIAL_FILTERS,
+                    outplanes = out_filters,
                     nplanes   = 1)
                 )
+            n_filters = out_filters
 
-            n_filters += FLAGS.N_INITIAL_FILTERS
             spatial_size /= 2
 
             self.add_module("post_merge_conv_{}".format(layer), 
@@ -309,7 +313,7 @@ class ResNet(torch.nn.Module):
             x = self.pre_convolutional_layers[i](x)
 
 
-
+        print(x.features.shape)
         for i in range(len(self.post_convolutional_layers)):
             x = self.post_convolutional_layers[i](x)
 

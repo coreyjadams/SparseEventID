@@ -18,6 +18,7 @@ where N_features is 2 or 3 depending on whether or not values are included
 
 ''' 
 
+
 def larcvsparse_to_scnsparse_3d(input_array):
     # This format converts the larcv sparse format to
     # the tuple format required for sparseconvnet
@@ -31,7 +32,7 @@ def larcvsparse_to_scnsparse_3d(input_array):
 
 
     # To map out the non_zero locations now is easy:
-    non_zero_inds = numpy.where(split_tensors[-1] != 0.0)
+    non_zero_inds = numpy.where(split_tensors[-1] != -999)
 
     # The batch dimension is just the first piece of the non-zero indexes:
     batch_size  = input_array.shape[0]
@@ -81,7 +82,7 @@ def larcvsparse_to_scnsparse_2d(input_array):
         # Next, figure out the x, y, value coordinates:
         x,y,features = numpy.split(plane, 3, axis=-1)
 
-        non_zero_locs = numpy.where(features != 0.0)
+        non_zero_locs = numpy.where(features != -999)
 
         # Pull together the different dimensions:
         x = x[non_zero_locs]
@@ -108,6 +109,7 @@ def larcvsparse_to_scnsparse_2d(input_array):
 
 def larcvsparse_to_dense_2d(input_array, dense_shape=512):
 
+
     batch_size = input_array.shape[0]
     n_planes   = input_array.shape[1]
     output_array = numpy.zeros((batch_size, n_planes, dense_shape, dense_shape), dtype=numpy.float32)
@@ -118,7 +120,7 @@ def larcvsparse_to_dense_2d(input_array, dense_shape=512):
 
 
     # Find the non_zero indexes of the input:
-    batch_index, plane_index, voxel_index = numpy.where(val_coords != 0.0)
+    batch_index, plane_index, voxel_index = numpy.where(val_coords != -999)
 
     values  = val_coords[batch_index, plane_index, voxel_index]
     x_index = numpy.int32(x_coords[batch_index, plane_index, voxel_index])
@@ -138,7 +140,7 @@ def larcvdense_to_scnsparse_3d(input_array):
     n_dims = 4
 
     # To map out the non_zero locations now is easy:
-    batch, x, y, z, val = numpy.where(input_array != 0.0)
+    batch, x, y, z, val = numpy.where(input_array != -999)
 
     features = input_array[batch,x,y,z,val]
 

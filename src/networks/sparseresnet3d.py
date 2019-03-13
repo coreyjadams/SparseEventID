@@ -4,6 +4,7 @@ import sparseconvnet as scn
 
 from src import utils
 
+FLAGS = utils.flags.FLAGS()
 
 class SparseBlock(nn.Module):
 
@@ -135,6 +136,10 @@ class SparseBlockSeries(torch.nn.Module):
         return x
 
 
+def filter_increase(input_filters):
+    # return input_filters * 2
+    return input_filters + FLAGS.N_INITIAL_FILTERS
+
 class ResNet(torch.nn.Module):
 
     def __init__(self, output_shape):
@@ -154,7 +159,6 @@ class ResNet(torch.nn.Module):
 
         # We apply an initial convolution, to each plane, to get n_inital_filters
 
-        FLAGS = utils.flags.FLAGS()
         self.initial_convolution = scn.SubmanifoldConvolution(3, 1, FLAGS.N_INITIAL_FILTERS, filter_size=5, bias=False)
 
         n_filters = FLAGS.N_INITIAL_FILTERS
@@ -170,11 +174,12 @@ class ResNet(torch.nn.Module):
                 n_filters, 
                 FLAGS.RES_BLOCKS_PER_LAYER,
                 residual = True))
+            out_filters = filter_increase(n_filters)
             self.convolutional_layers.append(SparseConvolutionDownsample(
                 inplanes = n_filters,
-                outplanes = n_filters + FLAGS.N_INITIAL_FILTERS))
-            
-            n_filters += FLAGS.N_INITIAL_FILTERS
+                outplanes = out_filters))
+                # outplanes = n_filters + FLAGS.N_INITIAL_FILTERS))
+            n_filters = out_filters
 
             self.add_module("conv_{}".format(layer), self.convolutional_layers[-2])
             self.add_module("down_{}".format(layer), self.convolutional_layers[-1])

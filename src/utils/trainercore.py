@@ -159,11 +159,14 @@ class trainercore(object):
     def initialize(self, io_only=False):
 
 
+
         self._initialize_io()
 
 
         if io_only:
             return
+
+        FLAGS.dump_config()
 
         self.init_network()
 
@@ -197,24 +200,65 @@ class trainercore(object):
                 self._log_keys.append('acc/{}'.format(key))
 
 
+    def get_device(self):
+        # Convert the input data to torch tensors
+        if FLAGS.COMPUTE_MODE == "GPU":
+            device = torch.device('cuda')
+            # print(device)
+        else:
+            device = torch.device('cpu')
+
+
+        return device
+
     def init_optimizer(self):
 
         # Create an optimizer:
-        if FLAGS.LEARNING_RATE <= 0:
-            self._opt = torch.optim.Adam(self._net.parameters(),
+        if FLAGS.OPTIMIZER == "SDG":
+            self._opt = torch.optim.SGD(self._net.parameters(), lr=FLAGS.LEARNING_RATE,
                 weight_decay=FLAGS.WEIGHT_DECAY)
         else:
             self._opt = torch.optim.Adam(self._net.parameters(), lr=FLAGS.LEARNING_RATE,
-                weight_decay=FLAGS.WEIGHT_DECAY, )
+                weight_decay=FLAGS.WEIGHT_DECAY)
 
 
-        lambda_warmup = lambda epoch: 1.0 if epoch < 30 else 0.1
-
-        self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self._opt, lambda_warmup, last_epoch=-1)
 
 
-        self._criterion = torch.nn.CrossEntropyLoss()
+
+        device = self.get_device()
+
+        # here we store the loss weights:
+        if FLAGS.LABEL_MODE == 'all':
+            self._label_weights = torch.tensor([ 
+                4930., 247., 2311., 225., 11833., 1592., 3887., 378., 4966., 1169., 1944., 335., 
+                5430., 201., 1630., 67., 13426., 1314., 3111., 243., 5070., 788., 1464., 163.,
+                5851.,3267.,1685.,183.,7211.,3283.,2744.,302.,5804.,1440.,1302., 204.
+                ], device=device)
+            weights = torch.sum(self._label_weights) / self._label_weights
+            self._label_weights = weights / torch.sum(weights)
+
+            self._criterion = torch.nn.CrossEntropyLoss(weight=self._label_weights)
+
+
+        elif FLAGS.LABEL_MODE == 'split':
+            # These are the raw category occurences
+            self._label_weights = {
+                'label_cpi'  : torch.tensor([7784., 2216.], device=device),
+                'label_prot' : torch.tensor([2658., 4940., 2402.], device=device), 
+                'label_npi'  : torch.tensor([8448., 1552.], device=device),
+                'label_neut' : torch.tensor([3322., 3317., 3361.], device=device)
+            }
+
+            self._criterion = {}
+
+            for key in self._label_weights:
+                weights = torch.sum(self._label_weights[key]) / self._label_weights[key]
+                self._label_weights[key] = weights / torch.sum(weights)
+
+
+
+            for key in self._label_weights:
+                self._criterion[key] = torch.nn.CrossEntropyLoss(weight=self._label_weights[key])
 
 
     def init_saver(self):
@@ -246,7 +290,10 @@ class trainercore(object):
 
         _, checkpoint_file_path = self.get_model_filepath()
 
+        print(checkpoint_file_path)
+
         if not os.path.isfile(checkpoint_file_path):
+            print("Returning none!")
             return None
         # Parse the checkpoint file and use that to get the latest file path
 
@@ -362,6 +409,22 @@ class trainercore(object):
         '''
 
 
+        # This dataset is not balanced across labels.  So, we can weight the loss according to the labels
+        # 
+        # 'label_cpi': array([1523.,  477.]), 
+        # 'label_prot': array([528., 964., 508.]), 
+        # 'label_npi': array([1699.,  301.]), 
+        # 'label_neut': array([655., 656., 689.])
+
+        # You can see that the only category that's truly balanced is the neutrino category.  
+        # The proton category has a ratio of 1 : 2 : 1 which isn't terrible, but can be fixed.  
+        # Both the proton and neutrino categories learn well.
+        #
+        #
+        # The pion categories learn poorly, and slowly.  They quickly reach ~75% and ~85% accuracy for c/n pi
+        # Which is just the ratio of the 0 : 1 label in each category.  So, they are learning to predict always zero, 
+        # And it is difficult to bust out of that.
+
 
         if FLAGS.LABEL_MODE == 'all':
             values, target = torch.max(inputs[FLAGS.KEYWORD_LABEL], dim = 1)
@@ -371,10 +434,19 @@ class trainercore(object):
             loss = None
             for key in logits:
                 values, target = torch.max(inputs[key], dim=1)
+
+                temp_loss = self._criterion[key](logits[key], target= target)
+                # print(temp_loss.shape)
+                # temp_loss *= self._label_weights[key]
+                # print(temp_loss.shape)
+                # temp_loss = torch.sum(temp_loss)
+                # print(temp_loss.shape)
+
                 if loss is None:
-                    loss = self._criterion(logits[key], target=target)
+                    loss = temp_loss
                 else:
-                    loss += self._criterion(logits[key], target=target)
+                    loss += temp_loss
+
             return loss
 
 
@@ -477,6 +549,7 @@ class trainercore(object):
         # For the serial mode, call next here:
         if not FLAGS.DISTRIBUTED:
             self._larcv_interface.next(mode)
+
         minibatch_data = self._larcv_interface.fetch_minibatch_data(mode, fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(mode)
 
@@ -508,6 +581,7 @@ class trainercore(object):
                 minibatch_data['image'] = data_transforms.larcvsparse_to_dense_3d(minibatch_data['image'])
             else:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_dense_2d(minibatch_data['image'])
+
 
         elif FLAGS.IMAGE_MODE == 'sparse' and FLAGS.SPARSE:
             if FLAGS.INPUT_DIMENSION == '3D':
@@ -588,6 +662,7 @@ class trainercore(object):
 
         minibatch_data = self.to_torch(minibatch_data)
 
+
         # Run a forward pass of the model on the input image:
         logits = self._net(minibatch_data['image'])
 
@@ -659,7 +734,7 @@ class trainercore(object):
 
         self._net.eval()
 
-        if self._global_step % FLAGS.AUX_ITERATION == 0:
+        if self._global_step != 0 and self._global_step % FLAGS.AUX_ITERATION == 0:
 
 
             # Fetch the next batch of data with larcv

@@ -70,7 +70,7 @@ class FLAGS(Borg):
         self.CHECKPOINT_ITERATION  = 100
         self.SUMMARY_ITERATION     = 1
         self.LOGGING_ITERATION     = 1
-        self.LEARNING_RATE         = 0.01
+        self.LEARNING_RATE         = 0.003
         self.ITERATIONS            = 5000
         self.VERBOSITY             = 0
         self.LOG_DIRECTORY         = './log'
@@ -101,6 +101,8 @@ class FLAGS(Borg):
 
         self.KEYWORD_LABEL         = None
 
+        self.LR_SCHEDULE           = 'flat'
+        self.OPTIMIZER             = "Adam"
 
 
         # Optional Test IO parameters:
@@ -185,6 +187,12 @@ class FLAGS(Borg):
                                   help='Period (in steps) to print values to log [default: {}]'.format(self.LOGGING_ITERATION))
         self.train_parser.add_argument('-ci','--checkpoint-iteration', type=int, default=self.CHECKPOINT_ITERATION,
                                   help='Period (in steps) to store snapshot of weights [default: {}]'.format(self.CHECKPOINT_ITERATION))
+
+        self.train_parser.add_argument('--lr-schedule', type=str, choices=['flat', '1cycle', 'decay'], default=self.LR_SCHEDULE,
+                                  help='Apply a learning rate schedule [default: {}]'.format(self.LR_SCHEDULE))
+        self.train_parser.add_argument('--optimizer', type=str, choices=['Adam', 'SGD'], default=self.OPTIMIZER,
+                                  help='Optimizer to use [default: {}]'.format(self.OPTIMIZER))
+
 
         # attach common parsers
         self.train_parser  = self._add_default_network_configuration(self.train_parser)
@@ -309,7 +317,7 @@ class resnet(FLAGS):
         self.SHARE_WEIGHTS              = True
         self.WEIGHT_DECAY               = 1e-4
 
-        self.SPARSE                     = False
+        self.SPARSE                     = True
 
         self.INPUT_DIMENSION            = '2D' 
 
@@ -338,7 +346,7 @@ class resnet(FLAGS):
         parser.add_argument('--share-weights', type=str2bool, default=self.SHARE_WEIGHTS,
             help="Whether or not to share weights across planes [default: {}]".format(self.SHARE_WEIGHTS))
 
-        parser.add_argument('--sparse', action='store_true', default=self.SPARSE,
+        parser.add_argument('--sparse', type=str2bool, default=self.SPARSE,
             help="Run using submanifold sparse convolutions [default: {}]".format(self.SPARSE))
 
         return parser
@@ -365,7 +373,7 @@ class resnet3D(FLAGS):
         self.RES_BLOCKS_PER_LAYER  = 2
         self.NETWORK_DEPTH         = 5
         self.WEIGHT_DECAY          = 1e-4
-        self.SPARSE                = False
+        self.SPARSE                = True
         self.INPUT_DIMENSION       = '3D' 
 
         FLAGS._set_defaults(self)
@@ -386,7 +394,7 @@ class resnet3D(FLAGS):
         parser.add_argument('--weight-decay', type=float, default=self.WEIGHT_DECAY,
             help="Weight decay strength [default: {}]".format(self.WEIGHT_DECAY))
 
-        parser.add_argument('--sparse', action='store_true', default=self.SPARSE,
+        parser.add_argument('--sparse', type=str2bool, default=self.SPARSE,
             help="Run using submanifold sparse convolutions [default: {}]".format(self.SPARSE))
 
         return parser
