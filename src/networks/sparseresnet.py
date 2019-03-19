@@ -313,7 +313,6 @@ class ResNet(torch.nn.Module):
             x = self.pre_convolutional_layers[i](x)
 
 
-        print(x.features.shape)
         for i in range(len(self.post_convolutional_layers)):
             x = self.post_convolutional_layers[i](x)
 
