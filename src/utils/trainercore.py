@@ -541,7 +541,7 @@ class trainercore(object):
 
             # try to get the learning rate
             # print self._lr_scheduler.get_lr()
-            self._saver.add_scalar("learning_rate", self._lr_scheduler.get_lr()[0], self._global_step)
+            self._saver.add_scalar("learning_rate", self._opt.state_dict()['param_groups'][0]['lr'], self._global_step)
             pass
 
     def fetch_next_batch(self, mode='primary', metadata=False):
@@ -878,3 +878,4 @@ class trainercore(object):
                 self._saver.close()
             if self._aux_saver is not None:
                 self._aux_saver.close()
+
