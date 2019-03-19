@@ -1,5 +1,7 @@
 import argparse
 
+import json
+
 import os,sys
 top_dir = os.path.dirname(os.path.abspath(__file__))
 top_dir = os.path.dirname(top_dir)
@@ -64,7 +66,7 @@ class FLAGS(Borg):
 
     def _set_defaults(self):
         # Parameters controlling training situations
-        self.COMPUTE_MODE          = "CPU"
+        self.COMPUTE_MODE          = "GPU"
         self.TRAINING              = True
         self.MINIBATCH_SIZE        = 2
         self.CHECKPOINT_ITERATION  = 100
@@ -76,7 +78,7 @@ class FLAGS(Borg):
         self.LOG_DIRECTORY         = './log'
         self.CHECKPOINT_DIRECTORY  = None
 
-        self.DISTRIBUTED           = False
+        self.DISTRIBUTED           = True
 
         # To be clear, this is specifying the image mode from larcv ThreadIO,
         # Not the input to the network
@@ -111,7 +113,7 @@ class FLAGS(Borg):
         self.AUX_IO_VERBOSITY          = 3
         # self.AUX_KEYWORD_DATA          = 'aux_data'
         # self.AUX_KEYWORD_LABEL         = 'aux_label'
-        self.AUX_MINIBATCH_SIZE        = self.MINIBATCH_SIZE
+        self.AUX_MINIBATCH_SIZE        = None
         self.AUX_ITERATION             = 10*self.SUMMARY_ITERATION
         self.OUTPUT_FILE               = None
 
@@ -247,7 +249,39 @@ class FLAGS(Borg):
         self._set_defaults()
         self._create_parsers()
         args, unknown = self._parser.parse_known_args()
-        self.update(vars(args))
+
+
+
+
+        standard_args = vars(args)
+
+        # print("Args: ")
+        # print(standard_args)
+        # print()
+        try:
+            json_args = json.loads(unknown[0])
+        except:
+            json_args = {}
+        # print("unknown:")
+        # print(json_args)
+        # print(type(json_args))
+        # print()
+
+        for key in json_args:
+            standard_args[key] = json_args[key]
+
+        # merged = {**standard_args, **json_args}
+        # merged = standard_args.update(json_args)
+
+        # print("Merged: ")
+        # print(standard_args)
+
+        self.update(standard_args)
+
+
+        # # Take the unknown args and parse them into json:
+        # argparse_dict = vars(unknown)
+        # argparse_dict.update(json_dict)
 
         if self.MODE == 'inference':
             self.TRAINING = False
@@ -288,6 +322,9 @@ class FLAGS(Borg):
         # elif self.LABEL_MODE == "all":
         #     self.KEYWORD_LABEL = self.KEYWORD_LABEL_ALL
         #     # self.AUX_KEYWORD_LABEL = self.AUX_KEYWORD_LABEL_ALL
+
+        if self.AUX_MINIBATCH_SIZE is None:
+            self.AUX_MINIBATCH_SIZE = 10*self.MINIBATCH_SIZE
 
     def _add_default_network_configuration(self, parser):
         raise NotImplementedError("Must use a derived class which overrides this function")
