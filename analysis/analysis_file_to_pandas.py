@@ -20,7 +20,7 @@ def convert_to_pandas(io_manager, mode='split', n_entries=None):
     
     # initialize a dataframe:
     df = pandas.DataFrame(
-        index = numpy.arange(io_manager.get_n_entries() - 1),
+        index = numpy.arange(io_manager.get_n_entries()),
         columns = ["pred_neut", "pred_neut0", "pred_neut1", "pred_neut2",
                    "pred_npi",  "pred_npi0",  "pred_npi1",
                    "pred_cpi",  "pred_cpi0",  "pred_cpi1",
@@ -35,7 +35,7 @@ def convert_to_pandas(io_manager, mode='split', n_entries=None):
     for i in range(io_manager.get_n_entries()):
 
         if n_entries is not None:
-            if i > n_entries:
+            if i >= n_entries:
                 break;
 
         io_manager.read_entry(i)
@@ -49,24 +49,76 @@ def convert_to_pandas(io_manager, mode='split', n_entries=None):
         allID  = io_manager.get_data("particle", "all")
         neutrino = io_manager.get_data("particle", "sbndneutrino")
         
-        if i != 0:
-            df.iloc[i-1]['true_cpi']  = cpiID.as_vector().front().pdg_code()
-            df.iloc[i-1]['true_npi']  = npiID.as_vector().front().pdg_code()
-            df.iloc[i-1]['true_neut'] = neutID.as_vector().front().pdg_code()
-            df.iloc[i-1]['true_prot'] = protID.as_vector().front().pdg_code()
-            df.iloc[i-1]['true_mult'] = allID.as_vector().front().pdg_code()
-            df.iloc[i-1]['energy']    = neutrino.as_vector().front().energy_init()
+    #     if i != 0:
+    #         df.iloc[i-1]['true_cpi']  = cpiID.as_vector().front().pdg_code()
+    #         df.iloc[i-1]['true_npi']  = npiID.as_vector().front().pdg_code()
+    #         df.iloc[i-1]['true_neut'] = neutID.as_vector().front().pdg_code()
+    #         df.iloc[i-1]['true_prot'] = protID.as_vector().front().pdg_code()
+    #         df.iloc[i-1]['true_mult'] = allID.as_vector().front().pdg_code()
+    #         df.iloc[i-1]['energy']    = neutrino.as_vector().front().energy_init()
 
-            # pot is per event, by truth information:
-            if neutID.as_vector().front().pdg_code() == 0:
-                # nueCC
-                df.iloc[i-1]['pot'] = 1.99e16
-            elif neutID.as_vector().front().pdg_code() == 1:
-                # numuCC
-                df.iloc[i-1]['pot'] = 1.83e14
-            else:  # neutID.as_vector().front().pdg_code() == 2
-                # NC
-                df.iloc[i-1]['pot'] = 5.19e14
+    #         # pot is per event, by truth information:
+    #         if neutID.as_vector().front().pdg_code() == 0:
+    #             # nueCC
+    #             df.iloc[i-1]['pot'] = 1.99e16
+    #         elif neutID.as_vector().front().pdg_code() == 1:
+    #             # numuCC
+    #             df.iloc[i-1]['pot'] = 1.83e14
+    #         else:  # neutID.as_vector().front().pdg_code() == 2
+    #             # NC
+    #             df.iloc[i-1]['pot'] = 5.19e14
+
+    #     if mode == "split":
+    #         label_cpi  = io_manager.get_data("meta", "label_cpi")
+    #         label_npi  = io_manager.get_data("meta", "label_npi")
+    #         label_prot = io_manager.get_data("meta", "label_prot")
+    #         label_neut = io_manager.get_data("meta", "label_neut")
+
+    # #         df.iloc[i]['pred_cpi'] = label_cpi.as_vector().front().pdg_code()
+    #         logits_cpi  = label_cpi.get_darray('meta')
+    #         logits_npi  = label_npi.get_darray('meta')
+    #         logits_prot = label_prot.get_darray('meta')
+    #         logits_neut = label_neut.get_darray('meta')
+
+    #         index = i
+
+    #         if i != io_manager.get_n_entries() -1 :
+    #             df.iloc[index]["pred_neut"]  = numpy.argmax(logits_neut)
+    #             df.iloc[index]["pred_neut0"] = logits_neut[0]
+    #             df.iloc[index]["pred_neut1"] = logits_neut[1]
+    #             df.iloc[index]["pred_neut2"] = logits_neut[2]
+
+    #             df.iloc[index]["pred_cpi"]  = numpy.argmax(logits_cpi)
+    #             df.iloc[index]["pred_cpi0"] = logits_cpi[0]
+    #             df.iloc[index]["pred_cpi1"] = logits_cpi[1]
+
+    #             df.iloc[index]["pred_npi"]  = numpy.argmax(logits_npi)
+    #             df.iloc[index]["pred_npi0"] = logits_npi[0]
+    #             df.iloc[index]["pred_npi1"] = logits_npi[1]
+
+    #             df.iloc[index]["pred_prot"]  = numpy.argmax(logits_prot)
+    #             df.iloc[index]["pred_prot0"] = logits_prot[0]
+    #             df.iloc[index]["pred_prot1"] = logits_prot[1]
+    #             df.iloc[index]["pred_prot2"] = logits_prot[2]
+        
+
+        df.iloc[i]['true_cpi']  = cpiID.as_vector().front().pdg_code()
+        df.iloc[i]['true_npi']  = npiID.as_vector().front().pdg_code()
+        df.iloc[i]['true_neut'] = neutID.as_vector().front().pdg_code()
+        df.iloc[i]['true_prot'] = protID.as_vector().front().pdg_code()
+        df.iloc[i]['true_mult'] = allID.as_vector().front().pdg_code()
+        df.iloc[i]['energy']    = neutrino.as_vector().front().energy_init()
+
+        # pot is per event, by truth information:
+        if neutID.as_vector().front().pdg_code() == 0:
+            # nueCC
+            df.iloc[i]['pot'] = 1.99e16
+        elif neutID.as_vector().front().pdg_code() == 1:
+            # numuCC
+            df.iloc[i]['pot'] = 1.83e14
+        else:  # neutID.as_vector().front().pdg_code() == 2
+            # NC
+            df.iloc[i]['pot'] = 5.19e14
 
         if mode == "split":
             label_cpi  = io_manager.get_data("meta", "label_cpi")
@@ -81,26 +133,26 @@ def convert_to_pandas(io_manager, mode='split', n_entries=None):
             logits_neut = label_neut.get_darray('meta')
 
             index = i
+            df.iloc[index]["pred_neut"]  = numpy.argmax(logits_neut)
+            df.iloc[index]["pred_neut0"] = logits_neut[0]
+            df.iloc[index]["pred_neut1"] = logits_neut[1]
+            df.iloc[index]["pred_neut2"] = logits_neut[2]
 
-            if i != io_manager.get_n_entries() -1 :
-                df.iloc[index]["pred_neut"]  = numpy.argmax(logits_neut)
-                df.iloc[index]["pred_neut0"] = logits_neut[0]
-                df.iloc[index]["pred_neut1"] = logits_neut[1]
-                df.iloc[index]["pred_neut2"] = logits_neut[2]
+            df.iloc[index]["pred_cpi"]  = numpy.argmax(logits_cpi)
+            df.iloc[index]["pred_cpi0"] = logits_cpi[0]
+            df.iloc[index]["pred_cpi1"] = logits_cpi[1]
 
-                df.iloc[index]["pred_cpi"]  = numpy.argmax(logits_cpi)
-                df.iloc[index]["pred_cpi0"] = logits_cpi[0]
-                df.iloc[index]["pred_cpi1"] = logits_cpi[1]
+            df.iloc[index]["pred_npi"]  = numpy.argmax(logits_npi)
+            df.iloc[index]["pred_npi0"] = logits_npi[0]
+            df.iloc[index]["pred_npi1"] = logits_npi[1]
 
-                df.iloc[index]["pred_npi"]  = numpy.argmax(logits_npi)
-                df.iloc[index]["pred_npi0"] = logits_npi[0]
-                df.iloc[index]["pred_npi1"] = logits_npi[1]
-
-                df.iloc[index]["pred_prot"]  = numpy.argmax(logits_prot)
-                df.iloc[index]["pred_prot0"] = logits_prot[0]
-                df.iloc[index]["pred_prot1"] = logits_prot[1]
-                df.iloc[index]["pred_prot2"] = logits_prot[2]
+            df.iloc[index]["pred_prot"]  = numpy.argmax(logits_prot)
+            df.iloc[index]["pred_prot0"] = logits_prot[0]
+            df.iloc[index]["pred_prot1"] = logits_prot[1]
+            df.iloc[index]["pred_prot2"] = logits_prot[2]
         
+
+
         else:
             pass
 
@@ -125,7 +177,7 @@ def calculate_accuracy(df):
 def main():
 
     parser = argparse.ArgumentParser(description="Configuration Flags")
-    parser.add_argument('-f', '--file', type=str, help="Name of larcv file")
+    parser.add_argument('-f', '--file', type=str, help="Name of larcv file", required=True)
 
     args = parser.parse_args()
 
@@ -133,6 +185,7 @@ def main():
     
     io_manager = init_file(args.file)
     df = convert_to_pandas(io_manager, n_entries=None)
+
 
     calculate_accuracy(df)
 
