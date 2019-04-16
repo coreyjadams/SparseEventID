@@ -1,4 +1,5 @@
 import os
+import tempfile
 import sys
 import time
 from collections import OrderedDict
@@ -11,6 +12,7 @@ from larcv import larcv_interface
 
 from . import flags
 from . import data_transforms
+from . import io_templates
 FLAGS = flags.FLAGS()
 
 import datetime
@@ -31,60 +33,110 @@ class trainercore(object):
         self._iteration       = 0
         self._global_step     = -1
 
+        self._cleanup         = []
+
+    def __del__(self):
+        for f in self._cleanup:
+            os.unlink(f.name)
+            
+
     def _initialize_io(self):
+
+        # Use the templates to generate a configuration string, which we store into a temporary file
+        if FLAGS.TRAINING:
+            config = io_templates.train_io(input_file=FLAGS.FILE, image_dim=FLAGS.INPUT_DIMENSION, 
+                label_mode=FLAGS.LABEL_MODE)
+        else:
+            config = io_templates.ana_io(input_file=FLAGS.FILE, image_dim=FLAGS.INPUT_DIMENSION,
+                label_mode=FLAGS.LABEL_MODE)
+
+
+        # Generate a named temp file:
+        main_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        main_file.write(config.generate_config_str())
+
+        main_file.close()
+        self._cleanup.append(main_file)
 
         # Prepare data managers:
         io_config = {
-            'filler_name' : FLAGS.FILLER,
-            'filler_cfg'  : FLAGS.FILE,
+            'filler_name' : config._name,
+            'filler_cfg'  : main_file.name,
             'verbosity'   : FLAGS.VERBOSITY,
             'make_copy'   : True
         }
 
+        # Build up the data_keys:
+        data_keys = OrderedDict()
+        data_keys['image'] = 'data'
+        for proc in config._process_list._processes:
+            if proc._name == 'data': 
+                continue
+            else:
+                data_keys[proc._name] = proc._name
+
+        # Assign the keywords here:
         if FLAGS.LABEL_MODE == 'all':
-
-            data_keys = OrderedDict({
-                'image': FLAGS.KEYWORD_DATA, 
-                'label': FLAGS.KEYWORD_LABEL
-                })
+            FLAGS.KEYWORD_LABEL = 'label'
         else:
-            data_keys = OrderedDict({
-                'image': FLAGS.KEYWORD_DATA,
-                })
-            for label in FLAGS.KEYWORD_LABEL:
-                data_keys.update({label : label})
-
+            FLAGS.KEYWORD_LABEL = []
+            for key in data_keys.keys():
+                if key != 'image':
+                    FLAGS.KEYWORD_LABEL.append(key)
 
         self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys)
+
+        if not FLAGS.TRAINING:
+            self._larcv_interface._dataloaders['primary'].set_next_index(0)
 
         # All of the additional tools are in case there is a test set up:
         if FLAGS.AUX_FILE is not None:
 
+
             if FLAGS.TRAINING:
+                config = io_templates.test_io(input_file=FLAGS.AUX_FILE, image_dim=FLAGS.INPUT_DIMENSION, 
+                    label_mode=FLAGS.LABEL_MODE)
+
+                # Generate a named temp file:
+                aux_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+                aux_file.write(config.generate_config_str())
+                # print([proc._name for proc in config._process_list._processes])
+
+                aux_file.close()
+                self._cleanup.append(aux_file)
                 io_config = {
-                    'filler_name' : FLAGS.AUX_FILLER,
-                    'filler_cfg'  : FLAGS.AUX_FILE,
+                    'filler_name' : config._name,
+                    'filler_cfg'  : aux_file.name,
                     'verbosity'   : FLAGS.VERBOSITY,
                     'make_copy'   : True
                 }
 
-                if FLAGS.LABEL_MODE == 'all':
+                # Build up the data_keys:
+                data_keys = OrderedDict()
+                data_keys['image'] = 'aux_data'
+                for proc in config._process_list._processes:
+                    if proc._name == 'aux_data': 
+                        continue
+                    else:
+                        data_keys[proc._name] = proc._name
 
-                    data_keys = OrderedDict({
-                        'image': FLAGS.AUX_KEYWORD_DATA, 
-                        'label': FLAGS.AUX_KEYWORD_LABEL
-                        })
-                else:
-                    data_keys = OrderedDict({
-                        'image': FLAGS.AUX_KEYWORD_DATA,
-                        })
-                    for label in FLAGS.AUX_KEYWORD_LABEL:
-                        data_keys.update({label : label})
 
-                # Then this is a testing file
+
                 self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys)
-            else:
-                self._larcv_interface.prepare_writer(FLAGS.AUX_FILE, FLAGS.OUTPUT_FILE)
+
+        if FLAGS.OUTPUT_FILE is not None:
+            if not FLAGS.TRAINING:
+                config = io_templates.output_io(input_file=FLAGS.FILE, output_file=FLAGS.OUTPUT_FILE)
+                
+                out_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+                out_file.write(config.generate_config_str())
+                print(config.generate_config_str())
+
+                out_file.close()
+                self._cleanup.append(out_file)
+
+                self._larcv_interface.prepare_writer(out_file.name, FLAGS.OUTPUT_FILE)
+
 
 
     def init_network(self):
@@ -107,11 +159,14 @@ class trainercore(object):
     def initialize(self, io_only=False):
 
 
+
         self._initialize_io()
 
 
         if io_only:
             return
+
+        FLAGS.dump_config()
 
         self.init_network()
 
@@ -124,6 +179,12 @@ class trainercore(object):
 
         self.init_saver()
 
+        state = self.restore_model()
+
+        if state is not None:
+            self.load_state(state)
+        else:
+            self._global_step = 0
 
 
         if FLAGS.COMPUTE_MODE == "CPU":
@@ -135,28 +196,69 @@ class trainercore(object):
             self._log_keys = ['loss', 'accuracy']
         elif FLAGS.LABEL_MODE == 'split':
             self._log_keys = ['loss']
-            for key in FLAGS.KEYWORD_LABEL_SPLIT: 
+            for key in FLAGS.KEYWORD_LABEL: 
                 self._log_keys.append('acc/{}'.format(key))
 
+
+    def get_device(self):
+        # Convert the input data to torch tensors
+        if FLAGS.COMPUTE_MODE == "GPU":
+            device = torch.device('cuda')
+            # print(device)
+        else:
+            device = torch.device('cpu')
+
+
+        return device
 
     def init_optimizer(self):
 
         # Create an optimizer:
-        if FLAGS.LEARNING_RATE <= 0:
-            self._opt = torch.optim.Adam(self._net.parameters(),
+        if FLAGS.OPTIMIZER == "SDG":
+            self._opt = torch.optim.SGD(self._net.parameters(), lr=FLAGS.LEARNING_RATE,
                 weight_decay=FLAGS.WEIGHT_DECAY)
         else:
             self._opt = torch.optim.Adam(self._net.parameters(), lr=FLAGS.LEARNING_RATE,
-                weight_decay=FLAGS.WEIGHT_DECAY, )
+                weight_decay=FLAGS.WEIGHT_DECAY)
 
 
-        lambda_warmup = lambda epoch: 1.0 if epoch < 30 else 0.1
-
-        self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self._opt, lambda_warmup, last_epoch=-1)
 
 
-        self._criterion = torch.nn.CrossEntropyLoss()
+
+        device = self.get_device()
+
+        # here we store the loss weights:
+        if FLAGS.LABEL_MODE == 'all':
+            self._label_weights = torch.tensor([ 
+                4930., 247., 2311., 225., 11833., 1592., 3887., 378., 4966., 1169., 1944., 335., 
+                5430., 201., 1630., 67., 13426., 1314., 3111., 243., 5070., 788., 1464., 163.,
+                5851.,3267.,1685.,183.,7211.,3283.,2744.,302.,5804.,1440.,1302., 204.
+                ], device=device)
+            weights = torch.sum(self._label_weights) / self._label_weights
+            self._label_weights = weights / torch.sum(weights)
+
+            self._criterion = torch.nn.CrossEntropyLoss(weight=self._label_weights)
+
+
+        elif FLAGS.LABEL_MODE == 'split':
+            # These are the raw category occurences
+            self._label_weights = {
+                'label_cpi'  : torch.tensor([7784., 2216.], device=device),
+                'label_prot' : torch.tensor([2658., 4940., 2402.], device=device), 
+                'label_npi'  : torch.tensor([8448., 1552.], device=device),
+                'label_neut' : torch.tensor([3322., 3317., 3361.], device=device)
+            }
+
+            self._criterion = {}
+
+            for key in self._label_weights:
+                weights = torch.sum(self._label_weights[key]) / self._label_weights[key]
+                self._label_weights[key] = weights / torch.sum(weights)
+
+
+
+            for key in self._label_weights:
+                self._criterion[key] = torch.nn.CrossEntropyLoss(weight=self._label_weights[key])
 
 
     def init_saver(self):
@@ -180,8 +282,6 @@ class trainercore(object):
         # self._saver.add_graph(self._net, (dummy_input,))
 
         # Here, either restore the weights of the network or initialize it:
-        self._global_step = 0
-        self.restore_model()
 
 
     def restore_model(self):
@@ -190,8 +290,11 @@ class trainercore(object):
 
         _, checkpoint_file_path = self.get_model_filepath()
 
+        print(checkpoint_file_path)
+
         if not os.path.isfile(checkpoint_file_path):
-            return
+            print("Returning none!")
+            return None
         # Parse the checkpoint file and use that to get the latest file path
 
         with open(checkpoint_file_path, 'r') as _ckp:
@@ -207,6 +310,10 @@ class trainercore(object):
         else:
             state = torch.load(chkp_file)
 
+        return state
+
+    def load_state(self, state):
+
 
         self._net.load_state_dict(state['state_dict'])
         self._opt.load_state_dict(state['optimizer'])
@@ -219,7 +326,8 @@ class trainercore(object):
                     if torch.is_tensor(v):
                         state[k] = v.cuda()
 
-        return
+        return True
+
 
     def save_model(self):
         '''Save the model to file
@@ -283,7 +391,10 @@ class trainercore(object):
         '''
 
         # Find the base path of the log directory
-        file_path= FLAGS.LOG_DIRECTORY  + "/checkpoints/"
+        if FLAGS.CHECKPOINT_DIRECTORY == None:
+            file_path= FLAGS.LOG_DIRECTORY  + "/checkpoints/"
+        else:
+            file_path= FLAGS.CHECKPOINT_DIRECTORY  + "/checkpoints/"
 
 
         name = file_path + 'model-{}.ckpt'.format(self._global_step)
@@ -291,39 +402,28 @@ class trainercore(object):
 
         return name, checkpoint_file_path
 
-    def _create_softmax(self, logits):
-        '''Must return a dict type
-
-        [description]
-
-        Arguments:
-            logits {[type]} -- [description]
-
-        Raises:
-            NotImplementedError -- [description]
-        '''
-
-        # For the logits, we compute the softmax and the predicted label
-
-
-        output = dict()
-
-        # Take the logits (which are one per plane) and create a softmax and prediction (one per plane)
-
-        output['softmax'] = nn.softmax(logits)
-        output['prediction'] = nn.argmax(logits, axis=1)
-
-
-        return output
-
-
-
     def _calculate_loss(self, inputs, logits):
         ''' Calculate the loss.
 
         returns a single scalar for the optimizer to use.
         '''
 
+
+        # This dataset is not balanced across labels.  So, we can weight the loss according to the labels
+        # 
+        # 'label_cpi': array([1523.,  477.]), 
+        # 'label_prot': array([528., 964., 508.]), 
+        # 'label_npi': array([1699.,  301.]), 
+        # 'label_neut': array([655., 656., 689.])
+
+        # You can see that the only category that's truly balanced is the neutrino category.  
+        # The proton category has a ratio of 1 : 2 : 1 which isn't terrible, but can be fixed.  
+        # Both the proton and neutrino categories learn well.
+        #
+        #
+        # The pion categories learn poorly, and slowly.  They quickly reach ~75% and ~85% accuracy for c/n pi
+        # Which is just the ratio of the 0 : 1 label in each category.  So, they are learning to predict always zero, 
+        # And it is difficult to bust out of that.
 
 
         if FLAGS.LABEL_MODE == 'all':
@@ -334,10 +434,19 @@ class trainercore(object):
             loss = None
             for key in logits:
                 values, target = torch.max(inputs[key], dim=1)
+
+                temp_loss = self._criterion[key](logits[key], target= target)
+                # print(temp_loss.shape)
+                # temp_loss *= self._label_weights[key]
+                # print(temp_loss.shape)
+                # temp_loss = torch.sum(temp_loss)
+                # print(temp_loss.shape)
+
                 if loss is None:
-                    loss = self._criterion(logits[key], target=target)
+                    loss = temp_loss
                 else:
-                    loss += self._criterion(logits[key], target=target)
+                    loss += temp_loss
+
             return loss
 
 
@@ -432,10 +541,14 @@ class trainercore(object):
 
             # try to get the learning rate
             # print self._lr_scheduler.get_lr()
-            self._saver.add_scalar("learning_rate", self._lr_scheduler.get_lr()[0], self._global_step)
+            self._saver.add_scalar("learning_rate", self._opt.state_dict()['param_groups'][0]['lr'], self._global_step)
             pass
 
     def fetch_next_batch(self, mode='primary', metadata=False):
+
+        # For the serial mode, call next here:
+        if not FLAGS.DISTRIBUTED:
+            self._larcv_interface.next(mode)
 
         minibatch_data = self._larcv_interface.fetch_minibatch_data(mode, fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(mode)
@@ -458,19 +571,20 @@ class trainercore(object):
             pass
         elif FLAGS.IMAGE_MODE == 'dense' and FLAGS.SPARSE:
             # Have to convert the input image from dense to sparse format:
-            if '3d' in FLAGS.FILE:
+            if FLAGS.INPUT_DIMENSION == '3D':
                 minibatch_data['image'] = data_transforms.larcvdense_to_scnsparse_3d(minibatch_data['image'])
             else:
                 minibatch_data['image'] = data_transforms.larcvdense_to_scnsparse_2d(minibatch_data['image'])
         elif FLAGS.IMAGE_MODE == 'sparse' and not FLAGS.SPARSE:
             # Need to convert sparse larcv into a dense numpy array:
-            if '3d' in FLAGS.FILE:
+            if FLAGS.INPUT_DIMENSION == '3D':
                 minibatch_data['image'] = data_transforms.larcvsparse_to_dense_3d(minibatch_data['image'])
             else:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_dense_2d(minibatch_data['image'])
 
+
         elif FLAGS.IMAGE_MODE == 'sparse' and FLAGS.SPARSE:
-            if '3d' in FLAGS.FILE:
+            if FLAGS.INPUT_DIMENSION == '3D':
                 minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_3d(minibatch_data['image'])
             else:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_2d(minibatch_data['image'])
@@ -511,7 +625,7 @@ class trainercore(object):
             if key == 'entries' or key =='event_ids':
                 continue
             if key == 'image' and FLAGS.SPARSE:
-                if '3d' in FLAGS.FILE:
+                if FLAGS.INPUT_DIMENSION == '3D':
                     minibatch_data['image'] = (
                             torch.tensor(minibatch_data['image'][0]).long(),
                             torch.tensor(minibatch_data['image'][1], device=device),
@@ -547,6 +661,8 @@ class trainercore(object):
         io_end_time = datetime.datetime.now()
 
         minibatch_data = self.to_torch(minibatch_data)
+
+
         # Run a forward pass of the model on the input image:
         logits = self._net(minibatch_data['image'])
 
@@ -618,7 +734,7 @@ class trainercore(object):
 
         self._net.eval()
 
-        if self._global_step % FLAGS.AUX_ITERATION == 0:
+        if self._global_step != 0 and self._global_step % FLAGS.AUX_ITERATION == 0:
 
 
             # Fetch the next batch of data with larcv
@@ -665,6 +781,7 @@ class trainercore(object):
         # Fetch the next batch of data with larcv
         minibatch_data = self.fetch_next_batch(metadata=True)
 
+
         # Convert the input data to torch tensors
         minibatch_data = self.to_torch(minibatch_data)
         
@@ -672,16 +789,26 @@ class trainercore(object):
         with torch.no_grad():
             logits = self._net(minibatch_data['image'])
 
-        # If there is an aux file, for ana that means an output file.
+        if FLAGS.LABEL_MODE == 'all':
+            softmax = torch.nn.Softmax(dim=-1)(logits)
+        else:
+            softmax = { key : torch.nn.Softmax(dim=-1)(logits[key]) for key in logits } 
+
+        # print('label_neut', minibatch_data['label_neut'])
+        # print('label_npi', minibatch_data['label_npi'])
+        # print('label_cpi', minibatch_data['label_cpi'])
+        # print('label_prot', minibatch_data['label_prot'])
+        # print(softmax)
+
         # Call the larcv interface to write data:
-        if FLAGS.AUX_FILE is not None:
+        if FLAGS.OUTPUT_FILE is not None:
             if FLAGS.LABEL_MODE == 'all':
-                writable_logits = numpy.asarray(logits.cpu())
+                writable_logits = numpy.asarray(softmax.cpu())
                 self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer='all',
                     entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
             else:
-                for key in logits:
-                    writable_logits = numpy.asarray(logits[key].cpu())
+                for key in softmax:
+                    writable_logits = numpy.asarray(softmax[key].cpu())
                     self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer=key,
                         entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
 
@@ -710,6 +837,9 @@ class trainercore(object):
 
     def checkpoint(self):
 
+        if FLAGS.CHECKPOINT_ITERATION == -1:
+            return
+
         if self._global_step % FLAGS.CHECKPOINT_ITERATION == 0 and self._global_step != 0:
             # Save a checkpoint, but don't do it on the first pass
             self.save_model()
@@ -721,6 +851,11 @@ class trainercore(object):
         self._epoch_size = self._larcv_interface.size('primary')
 
         # This is the 'master' function, so it controls a lot
+
+        # If we're not training, force the number of iterations to the epoch size or less
+        if not FLAGS.TRAINING:
+            if FLAGS.ITERATIONS > self._epoch_size:
+                FLAGS.ITERATIONS = self._epoch_size
 
 
         # Run iterations
@@ -743,3 +878,4 @@ class trainercore(object):
                 self._saver.close()
             if self._aux_saver is not None:
                 self._aux_saver.close()
+

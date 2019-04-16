@@ -1,5 +1,7 @@
 import argparse
 
+import json
+
 import os,sys
 top_dir = os.path.dirname(os.path.abspath(__file__))
 top_dir = os.path.dirname(top_dir)
@@ -64,22 +66,23 @@ class FLAGS(Borg):
 
     def _set_defaults(self):
         # Parameters controlling training situations
-        self.COMPUTE_MODE          = "CPU"
+        self.COMPUTE_MODE          = "GPU"
         self.TRAINING              = True
         self.MINIBATCH_SIZE        = 2
         self.CHECKPOINT_ITERATION  = 100
         self.SUMMARY_ITERATION     = 1
         self.LOGGING_ITERATION     = 1
-        self.LEARNING_RATE         = 0.0001
+        self.LEARNING_RATE         = 0.003
         self.ITERATIONS            = 5000
         self.VERBOSITY             = 0
         self.LOG_DIRECTORY         = './log'
+        self.CHECKPOINT_DIRECTORY  = None
 
-        self.DISTRIBUTED           = False
+        self.DISTRIBUTED           = True
 
         # To be clear, this is specifying the image mode from larcv ThreadIO,
         # Not the input to the network
-        self.IMAGE_MODE            = 'dense' # Can also be 'sparse'
+        self.IMAGE_MODE            = 'sparse' # Can also be 'sparse'
 
         # IO parameters  
         # IO has a 'default' file configuration and an optional
@@ -87,8 +90,7 @@ class FLAGS(Borg):
         # is the training data, aux is testing data.
         # In inference mode, default is the validation data, 
         # aux is the outputdata
-        self.FILE                  = '{}/io/dev/classification_3d_io_all.cfg'.format(top_dir)
-        self.FILLER                = 'DevIO'
+        self.FILE                  = "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/train_event_id.root"
         self.IO_VERBOSITY          = 3
         self.KEYWORD_DATA          = 'data'
         # For this classification task, the label can be split or all-in-one
@@ -96,30 +98,31 @@ class FLAGS(Borg):
 
         # These are "background" parameters
         # And are meant to be copied to the 'KEYWORD_LABEL' area
-        self.KEYWORD_LABEL_ALL     = 'label'
-        self.KEYWORD_LABEL_SPLIT   = ['label_neut','label_cpi','label_npi','label_prot']
+        # self.KEYWORD_LABEL_ALL     = 'label'
+        # self.KEYWORD_LABEL_SPLIT   = ['label_neut','label_cpi','label_npi','label_prot']
 
         self.KEYWORD_LABEL         = None
 
+        self.LR_SCHEDULE           = 'flat'
+        self.OPTIMIZER             = "Adam"
 
 
         # Optional Test IO parameters:
         # To activate the auxilliary IO, the AUX file must be not None
         self.AUX_FILE                  = None
-        self.AUX_FILLER                = 'TestIO'
         self.AUX_IO_VERBOSITY          = 3
-        self.AUX_KEYWORD_DATA          = 'aux_data'
-        self.AUX_KEYWORD_LABEL         = 'aux_label'
-        self.AUX_MINIBATCH_SIZE        = self.MINIBATCH_SIZE
+        # self.AUX_KEYWORD_DATA          = 'aux_data'
+        # self.AUX_KEYWORD_LABEL         = 'aux_label'
+        self.AUX_MINIBATCH_SIZE        = None
         self.AUX_ITERATION             = 10*self.SUMMARY_ITERATION
         self.OUTPUT_FILE               = None
 
-        # These are "background" parameters
-        # And are meant to be copied to the 'KEYWORD_LABEL' area
-        self.AUX_KEYWORD_LABEL_ALL     = 'aux_label'
-        self.AUX_KEYWORD_LABEL_SPLIT   = ['aux_label_neut','aux_label_cpi','aux_label_npi','aux_label_prot']
+        # # These are "background" parameters
+        # # And are meant to be copied to the 'KEYWORD_LABEL' area
+        # self.AUX_KEYWORD_LABEL_ALL     = 'aux_label'
+        # self.AUX_KEYWORD_LABEL_SPLIT   = ['aux_label_neut','aux_label_cpi','aux_label_npi','aux_label_prot']
 
-        self.AUX_KEYWORD_LABEL         = None
+        # self.AUX_KEYWORD_LABEL         = None
 
 
 
@@ -128,14 +131,12 @@ class FLAGS(Borg):
         # IO PARAMETERS FOR INPUT:
         parser.add_argument('-f','--file', type=str, default=self.FILE,
             help="IO Configuration File [default: {}]".format(self.FILE))
-        parser.add_argument('--filler', type=str, default=self.FILLER,
-            help="IO Larcv Filler [default: {}]".format(self.FILLER))
         parser.add_argument('--io-verbosity', type=int, default=self.IO_VERBOSITY,
             help="IO verbosity [default: {}]".format(self.IO_VERBOSITY))
-        parser.add_argument('--keyword-data', type=str, default=self.KEYWORD_DATA,
-            help="Keyword for io data access [default: {}]".format(self.KEYWORD_DATA))
-        parser.add_argument('--keyword-label', type=str, default=self.KEYWORD_LABEL,
-            help="Keyword for io label access [default: {}]".format(self.KEYWORD_LABEL))
+        # parser.add_argument('--keyword-data', type=str, default=self.KEYWORD_DATA,
+            # help="Keyword for io data access [default: {}]".format(self.KEYWORD_DATA))
+        # parser.add_argument('--keyword-label', type=str, default=self.KEYWORD_LABEL,
+            # help="Keyword for io label access [default: {}]".format(self.KEYWORD_LABEL))
 
         parser.add_argument('--label-mode', type=str, choices=['split', 'all'], default=self.LABEL_MODE,
             help="Run with split labels (multiple classifiers) or all in one [default: {}]".format(self.LABEL_MODE))
@@ -150,14 +151,12 @@ class FLAGS(Borg):
         # IO PARAMETERS FOR INPUT:
         parser.add_argument('--aux-file', type=str, default=self.AUX_FILE,
             help="IO Configuration File [default: {}]".format(self.AUX_FILE))
-        parser.add_argument('--aux-filler', type=str, default=self.AUX_FILLER,
-            help="IO Larcv Filler [default: {}]".format(self.AUX_FILLER))
         parser.add_argument('--aux-io-verbosity', type=int, default=self.AUX_IO_VERBOSITY,
             help="IO verbosity [default: {}]".format(self.AUX_IO_VERBOSITY))
-        parser.add_argument('--aux-keyword-data', type=str, default=self.AUX_KEYWORD_DATA,
-            help="Keyword for io data access [default: {}]".format(self.AUX_KEYWORD_DATA))
-        parser.add_argument('--aux-keyword-label', type=str, default=self.AUX_KEYWORD_LABEL,
-            help="Keyword for io label access [default: {}]".format(self.AUX_KEYWORD_LABEL))
+        # parser.add_argument('--aux-keyword-data', type=str, default=self.AUX_KEYWORD_DATA,
+        #     help="Keyword for io data access [default: {}]".format(self.AUX_KEYWORD_DATA))
+        # parser.add_argument('--aux-keyword-label', type=str, default=self.AUX_KEYWORD_LABEL,
+        #     help="Keyword for io label access [default: {}]".format(self.AUX_KEYWORD_LABEL))
 
 
         parser.add_argument('--aux-iteration',type=int, default=self.AUX_ITERATION,
@@ -190,6 +189,12 @@ class FLAGS(Borg):
                                   help='Period (in steps) to print values to log [default: {}]'.format(self.LOGGING_ITERATION))
         self.train_parser.add_argument('-ci','--checkpoint-iteration', type=int, default=self.CHECKPOINT_ITERATION,
                                   help='Period (in steps) to store snapshot of weights [default: {}]'.format(self.CHECKPOINT_ITERATION))
+
+        self.train_parser.add_argument('--lr-schedule', type=str, choices=['flat', '1cycle', 'decay'], default=self.LR_SCHEDULE,
+                                  help='Apply a learning rate schedule [default: {}]'.format(self.LR_SCHEDULE))
+        self.train_parser.add_argument('--optimizer', type=str, choices=['Adam', 'SGD'], default=self.OPTIMIZER,
+                                  help='Optimizer to use [default: {}]'.format(self.OPTIMIZER))
+
 
         # attach common parsers
         self.train_parser  = self._add_default_network_configuration(self.train_parser)
@@ -232,7 +237,9 @@ class FLAGS(Borg):
         parser.add_argument('-im','--image-mode',type=str,choices=['dense', 'sparse'],default=self.IMAGE_MODE,
             help="Input image format to the network, dense or sparse [default: {}]".format(self.IMAGE_MODE))
         parser.add_argument('-ld','--log-directory', default=self.LOG_DIRECTORY,
-            help='Prefix (directory + file prefix) for snapshots of weights [default: {}]'.format(self.LOG_DIRECTORY))
+            help='Prefix (directory) for logging information [default: {}]'.format(self.LOG_DIRECTORY))
+        parser.add_argument('-cd','--checkpoint-directory', default=self.CHECKPOINT_DIRECTORY,
+            help='Prefix (directory + file prefix) for snapshots of weights [default: {}]'.format(self.CHECKPOINT_DIRECTORY))
 
         return parser
 
@@ -241,8 +248,40 @@ class FLAGS(Borg):
     def parse_args(self):
         self._set_defaults()
         self._create_parsers()
-        args = self._parser.parse_args()
-        self.update(vars(args))
+        args, unknown = self._parser.parse_known_args()
+
+
+
+
+        standard_args = vars(args)
+
+        # print("Args: ")
+        # print(standard_args)
+        # print()
+        try:
+            json_args = json.loads(unknown[0])
+        except:
+            json_args = {}
+        # print("unknown:")
+        # print(json_args)
+        # print(type(json_args))
+        # print()
+
+        for key in json_args:
+            standard_args[key] = json_args[key]
+
+        # merged = {**standard_args, **json_args}
+        # merged = standard_args.update(json_args)
+
+        # print("Merged: ")
+        # print(standard_args)
+
+        self.update(standard_args)
+
+
+        # # Take the unknown args and parse them into json:
+        # argparse_dict = vars(unknown)
+        # argparse_dict.update(json_dict)
 
         if self.MODE == 'inference':
             self.TRAINING = False
@@ -277,12 +316,15 @@ class FLAGS(Borg):
             setattr(self, name.upper(), args[name])
         # Take special care to reset the keyword label attribute 
         # to match the label mode:
-        if self.LABEL_MODE == "split":
-            self.KEYWORD_LABEL = self.KEYWORD_LABEL_SPLIT
-            self.AUX_KEYWORD_LABEL = self.AUX_KEYWORD_LABEL_SPLIT
-        elif self.LABEL_MODE == "all":
-            self.KEYWORD_LABEL = self.KEYWORD_LABEL_ALL
-            self.AUX_KEYWORD_LABEL = self.AUX_KEYWORD_LABEL_ALL
+        # if self.LABEL_MODE == "split":
+        #     self.KEYWORD_LABEL = self.KEYWORD_LABEL_SPLIT
+        #     # self.AUX_KEYWORD_LABEL = self.AUX_KEYWORD_LABEL_SPLIT
+        # elif self.LABEL_MODE == "all":
+        #     self.KEYWORD_LABEL = self.KEYWORD_LABEL_ALL
+        #     # self.AUX_KEYWORD_LABEL = self.AUX_KEYWORD_LABEL_ALL
+
+        if self.AUX_MINIBATCH_SIZE is None:
+            self.AUX_MINIBATCH_SIZE = 10*self.MINIBATCH_SIZE
 
     def _add_default_network_configuration(self, parser):
         raise NotImplementedError("Must use a derived class which overrides this function")
@@ -312,7 +354,9 @@ class resnet(FLAGS):
         self.SHARE_WEIGHTS              = True
         self.WEIGHT_DECAY               = 1e-4
 
-        self.SPARSE                     = False
+        self.SPARSE                     = True
+
+        self.INPUT_DIMENSION            = '2D' 
 
         FLAGS._set_defaults(self)
 
@@ -339,7 +383,7 @@ class resnet(FLAGS):
         parser.add_argument('--share-weights', type=str2bool, default=self.SHARE_WEIGHTS,
             help="Whether or not to share weights across planes [default: {}]".format(self.SHARE_WEIGHTS))
 
-        parser.add_argument('--sparse', action='store_true', default=self.SPARSE,
+        parser.add_argument('--sparse', type=str2bool, default=self.SPARSE,
             help="Run using submanifold sparse convolutions [default: {}]".format(self.SPARSE))
 
         return parser
@@ -366,7 +410,8 @@ class resnet3D(FLAGS):
         self.RES_BLOCKS_PER_LAYER  = 2
         self.NETWORK_DEPTH         = 5
         self.WEIGHT_DECAY          = 1e-4
-        self.SPARSE                = False
+        self.SPARSE                = True
+        self.INPUT_DIMENSION       = '3D' 
 
         FLAGS._set_defaults(self)
 
@@ -386,7 +431,7 @@ class resnet3D(FLAGS):
         parser.add_argument('--weight-decay', type=float, default=self.WEIGHT_DECAY,
             help="Weight decay strength [default: {}]".format(self.WEIGHT_DECAY))
 
-        parser.add_argument('--sparse', action='store_true', default=self.SPARSE,
+        parser.add_argument('--sparse', type=str2bool, default=self.SPARSE,
             help="Run using submanifold sparse convolutions [default: {}]".format(self.SPARSE))
 
         return parser

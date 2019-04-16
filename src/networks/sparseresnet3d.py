@@ -4,6 +4,7 @@ import sparseconvnet as scn
 
 from src import utils
 
+FLAGS = utils.flags.FLAGS()
 
 class SparseBlock(nn.Module):
 
@@ -135,6 +136,10 @@ class SparseBlockSeries(torch.nn.Module):
         return x
 
 
+def filter_increase(input_filters):
+    # return input_filters * 2
+    return input_filters + FLAGS.N_INITIAL_FILTERS
+
 class ResNet(torch.nn.Module):
 
     def __init__(self, output_shape):
@@ -154,7 +159,6 @@ class ResNet(torch.nn.Module):
 
         # We apply an initial convolution, to each plane, to get n_inital_filters
 
-        FLAGS = utils.flags.FLAGS()
         self.initial_convolution = scn.SubmanifoldConvolution(3, 1, FLAGS.N_INITIAL_FILTERS, filter_size=5, bias=False)
 
         n_filters = FLAGS.N_INITIAL_FILTERS
@@ -170,11 +174,12 @@ class ResNet(torch.nn.Module):
                 n_filters, 
                 FLAGS.RES_BLOCKS_PER_LAYER,
                 residual = True))
+            out_filters = filter_increase(n_filters)
             self.convolutional_layers.append(SparseConvolutionDownsample(
                 inplanes = n_filters,
-                outplanes = n_filters + FLAGS.N_INITIAL_FILTERS))
-            
-            n_filters += FLAGS.N_INITIAL_FILTERS
+                outplanes = out_filters))
+                # outplanes = n_filters + FLAGS.N_INITIAL_FILTERS))
+            n_filters = out_filters
 
             self.add_module("conv_{}".format(layer), self.convolutional_layers[-2])
             self.add_module("down_{}".format(layer), self.convolutional_layers[-1])
@@ -183,7 +188,19 @@ class ResNet(torch.nn.Module):
 
 
         if FLAGS.LABEL_MODE == 'all':
-            self.bottleneck  = conv1x1(n_filters, output_shape[-1])
+            self.final_layer = SparseBlockSeries(
+                        inplanes = n_filters, 
+                        n_blocks = FLAGS.RES_BLOCKS_PER_LAYER,
+                        residual = True)
+                    
+            self.bottleneck  = scn.SubmanifoldConvolution(dimension=3, 
+                        nIn=n_filters, 
+                        nOut=output_shape[key][-1], 
+                        filter_size=3, 
+                        bias=False)
+
+            self.sparse_to_dense = scn.SparseToDense(dimension=3, nPlanes=output_shape[-1])
+
         else:
 
             self.final_layer = { 
@@ -194,9 +211,11 @@ class ResNet(torch.nn.Module):
                     for key in output_shape
                 }
             self.bottleneck  = { 
-                    key : SparseBlock(
-                        inplanes  = n_filters, 
-                        outplanes = output_shape[key][-1])
+                    key : scn.SubmanifoldConvolution(dimension=3, 
+                        nIn=n_filters, 
+                        nOut=output_shape[key][-1], 
+                        filter_size=1, 
+                        bias=False)
                     for key in output_shape
                 }
             self.sparse_to_dense = {
@@ -213,13 +232,13 @@ class ResNet(torch.nn.Module):
         # # The rest of the final operations (reshape, softmax) are computed in the forward pass
 
 
-        # Configure initialization:
-        for m in self.modules():
-            if isinstance(m, nn.Conv3d) or isinstance(m, scn.SubmanifoldConvolution):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, scn.BatchNormReLU):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+        # # Configure initialization:
+        # for m in self.modules():
+        #     if isinstance(m, nn.Conv3d) or isinstance(m, scn.SubmanifoldConvolution):
+        #         nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        #     elif isinstance(m, scn.BatchNormReLU):
+        #         nn.init.constant_(m.weight, 1)
+        #         nn.init.constant_(m.bias, 0)
 
 
 
@@ -242,17 +261,19 @@ class ResNet(torch.nn.Module):
         # Apply the final steps to get the right output shape
 
         if FLAGS.LABEL_MODE == 'all':
-            # Apply the final residual block:
-            # Apply the bottle neck to make the right number of output filters:
-            output = self.sparse_to_dense(output)
-            output = self.bottleneck(x)
 
+             # Apply the final residual block:
+            output = self.final_layer(x)
+            # print " 1 shape: ", output.shape)
+
+            # Apply the bottle neck to make the right number of output filters:
+            output = self.bottleneck(output)
+
+            output = self.sparse_to_dense(output)
 
             # Apply global average pooling 
             kernel_size = output.shape[2:]
             output = torch.squeeze(nn.AvgPool3d(kernel_size, ceil_mode=False)(output))
-
-            # Make sure the shape is right, in case batch size is 1:
             output = output.view([batch_size, output.shape[-1]])
 
 
