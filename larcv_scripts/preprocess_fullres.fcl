@@ -78,6 +78,9 @@ ProcessDriver: {
   }
 
   ProcessList: {
+
+    # Image manipulations: 
+
     Cluster2DThreshold: {
       Cluster2DProducer: "sbndseg"
       OutputProducer:    "sbndseg"
@@ -110,6 +113,15 @@ ProcessDriver: {
       ProtonThreshold:      0.020
       ChargedPionThreshold: 0.010
       NeutralPionThreshold: 0.000
+    }
+    CompressAndEmbed: {
+      Producer:          ["sbndwire","sbndneutrino","sbndseg"]
+      DataType:          ["image2d","cluster2d","cluster2d"]
+      RowCompression:    [1, 1, 1, 1]
+      ColCompression:    [1, 1, 1, 1]
+      Mode:              [0, 0, 0, 0]
+      OutputCols:        [2048, 2048, 2048, 2048]
+      OutputRows:        [1280, 1280, 1280, 1280]
     }
     QSumFilter: {
       ImageProducer: "sbndwire"
