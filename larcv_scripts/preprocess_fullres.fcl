@@ -10,21 +10,36 @@
 #    - cluster2d_sbndneutrino_tree
 #    - particle_sbndneutrino_tree
 #
-#   Tensor3DFromCluster3D: Convert cluster3d objects into tensor3d objects (input to the 3D networks)
+#   Operations performed:
 #
-#   EventPIDLabel: Create whole-event labels for Madeline's classification
+#   Modifications:
+#     - Cluster2D Threshold
+
+#   Filters:
+# 
 #
-#   QSumFilter: Filter out nearly empty events by setting a threshold on charge summed in each plane
+#
+#   Cluster2DThreshold: set a threshold level for semantic segmentation labels for individual particles
+#
+#   ThresholdTensor3D: set a threshold for tensors in 3D
+#
+#   Tensor3DFromCluster3D: Convert cluster3d objects into tensor3d objects (input to the 3D networks) - all pixels are converted in 3D.
+#
+#   CompressAndEmbed: Convert 2D images into uniform sizes across planes.
+#
+#   QSumFilter: Filter out nearly empty events in 2D by setting a threshold on charge summed in each plane.  Filters 2D and 3D labels.
 #
 #   EmptyTensorFilter: Filter out nearly empty events in 3D by setting a threshold on the number of non-zero voxels
 #
+#   EventPIDLabel: Create whole-event labels for Madeline's classification
+#
 #   ParentParticleSeg: Merge clusters in 2D and 3D into just their parent particles
+#
+#   Tensor2DFromImage2D: Convert the image data (and label data) into tensors for point net style input
 #
 #   LeptonSegLabel: Label the pixels as primary lepton (1) or non-lepton (2) or background pixels (0) (creates image2d)
 #
 #   LeptonSegLabel3D: Label the pixels as primary lepton (1) or non-lepton (2) or background pixels (0) (creates voxel3d)
-#
-#   Tensor2DFromImage2D: Convert the image data (and label data) into tensors for point net style input
 #
 #  This file runs in randomizing order, so feed files in any pattern as the output will be randomized.
 #
@@ -55,10 +70,10 @@ ProcessDriver: {
   EnableFilter:    true
   RandomAccess:    true
   RandomSeed:      -1
-  ProcessType:     ["Cluster2DThreshold","Tensor3DFromCluster3D","EmptyTensorFilter","ParentParticleSeg","QSumFilter","EventPIDLabel","LeptonSegLabel","LeptonSegLabel3D","ThresholdTensor3D","Tensor2DFromImage2D","Tensor2DFromImage2D","MaskTensor3D"]
-  ProcessName:     ["Cluster2DThreshold","Tensor3DFromCluster3D","EmptyTensorFilter","ParentParticleSeg","QSumFilter","EventPIDLabel","LeptonSegLabel","LeptonSegLabel3D","ThresholdTensor3D","LabelTensor2DFromImage2D","ImageTensor2DFromImage2D","MaskTensor3D"]
-  StartEntry: 0
-  #NumEntries: 50
+  ProcessType:     ["Cluster2DThreshold","CompressAndEmbed","Tensor2DFromImage2D","QSumFilter","Tensor3DFromCluster3D","ThresholdTensor3D","EmptyTensorFilter","ParentParticleSeg","EventPIDLabel"]
+  ProcessName:     ["Cluster2DThreshold","CompressAndEmbed","Tensor2DFromImage2D","QSumFilter","Tensor3DFromCluster3D","ThresholdTensor3D","EmptyTensorFilter","ParentParticleSeg","EventPIDLabel"]
+  #StartEntry: 0
+  #NumEntries: 10
 
 
 
@@ -71,8 +86,8 @@ ProcessDriver: {
     InputDirs:   []
 
     # Everything in one file:
-    StoreOnlyType: ["cluster2d","cluster2d","sparse2d","sparse2d","cluster3d","cluster3d","sparse3d","sparse3d","particle","particle","particle","particle","particle","particle","particle"]
-    StoreOnlyName: ["sbndneutrino","sbndsegmerged","sbndwire","sbndlepton","sbndneutrino","sbndsegmerged","sbndvoxels","sbndlepton","neutID","protID","cpiID","npiID","sbndneutrino","sbdnsegmerged","all"]
+    StoreOnlyType: ["cluster2d","cluster2d","sparse2d","cluster3d","cluster3d","sparse3d","particle","particle","particle","particle","particle","particle","particle"]
+    StoreOnlyName: ["sbndneutrino","sbndsegmerged","sbndwire","sbndneutrino","sbndsegmerged","sbndvoxels","neutID","protID","cpiID","npiID","sbndneutrino","sbdnsegmerged","all"]
 
 
   }
@@ -86,25 +101,34 @@ ProcessDriver: {
       OutputProducer:    "sbndseg"
       Threshold:         0.05
     }
-    ThresholdTensor3D: {
-      Cluster2DProducer: ["sbndvoxels", "sbndlepton"]
-      OutputProducer:    ["sbndvoxels", "sbndlepton"]
-      Threshold:         0.5
+    CompressAndEmbed: {
+      Producer:          ["sbndwire","sbndneutrino","sbndseg"]
+      DataType:          ["image2d","cluster2d","cluster2d"]
+      RowCompression:    [1, 1, 1]
+      ColCompression:    [1, 1, 1]
+      Mode:              [0, 0, 0]
+      OutputCols:        [2048, 2048, 2048]
+      OutputRows:        [1280, 1280, 1280]
     }
     Tensor3DFromCluster3D: {
       Cluster3DProducer:   "sbndseg"
       OutputProducer:      "sbndvoxels"
+    }
+
+    EmptyTensorFilter: {
+      Tensor3DProducer: "sbndvoxels"
+      MinVoxel3DCount: 50
+    }
+    ThresholdTensor3D: {
+      Cluster2DProducer: ["sbndvoxels", "sbndlepton"]
+      OutputProducer:    ["sbndvoxels", "sbndlepton"]
+      Threshold:         0.5
     }
     ParentParticleSeg: {
       Cluster2dProducer:  "sbndseg"
       Cluster3dProducer:  "sbndseg"
       OutputProducer:     "sbndsegmerged"
       ParticleProducer:   "sbndseg"
-    }
-    LeptonSegLabel: {
-      Cluster2dProducer:  "sbndsegmerged"
-      OutputProducer:     "sbndlepton"
-      ParticleProducer:   "sbndsegmerged"
     }
     EventPIDLabel: {
       OutputProducer:       "pid"
@@ -114,47 +138,17 @@ ProcessDriver: {
       ChargedPionThreshold: 0.010
       NeutralPionThreshold: 0.000
     }
-    CompressAndEmbed: {
-      Producer:          ["sbndwire","sbndneutrino","sbndseg"]
-      DataType:          ["image2d","cluster2d","cluster2d"]
-      RowCompression:    [1, 1, 1, 1]
-      ColCompression:    [1, 1, 1, 1]
-      Mode:              [0, 0, 0, 0]
-      OutputCols:        [2048, 2048, 2048, 2048]
-      OutputRows:        [1280, 1280, 1280, 1280]
-    }
     QSumFilter: {
       ImageProducer: "sbndwire"
       MinQSum:       [100, 100, 100]
       MinPixel:      [20 , 20 , 20 ]
       MinADC:        [20 , 20 , 20 ]
     }
-    EmptyTensorFilter: {
-      Tensor3DProducer: "sbndvoxels"
-      MinVoxel3DCount: 50
-    }
-    LeptonSegLabel3D: {
-      Cluster3dProducer:  "sbndsegmerged"
-      OutputProducer:     "sbndlepton"
-      ParticleProducer:   "sbndsegmerged"
-    }
-    LabelTensor2DFromImage2D: {
-      ImageProducer: "sbndlepton"
-      OutputProducer: "sbndlepton"
-      ProjectionIDs: [0,1,2]
-      Thresholds: [0,0,0]
-    }
-    ImageTensor2DFromImage2D:{
+    Tensor2DFromImage2D: {
       ImageProducer: "sbndwire"
-      ReferenceTensor2D: "sbndlepton"
       OutputProducer: "sbndwire"
       ProjectionIDs: [0,1,2]
-      Thresholds: [10,10,0]
-    }
-    MaskTensor3D: {
-      Tensor3DProducer:  "sbndvoxels"
-      OutputProducer:    "sbndvoxels"
-      ReferenceProducer: "sbndlepton"
+      Thresholds: [10.0,10.0,10.0]
     }
   }
 }
