@@ -565,6 +565,7 @@ class trainercore(object):
             minibatch_data[new_key] = minibatch_data.pop(key)            
 
 
+
         # Here, do some massaging to convert the input data to another format, if necessary:
         if FLAGS.IMAGE_MODE == 'dense' and not FLAGS.SPARSE:
             # Don't have to do anything here
@@ -732,40 +733,42 @@ class trainercore(object):
         # Validation steps can optionally accumulate over several minibatches, to
         # fit onto a gpu or other accelerator
 
-        self._net.eval()
+        # self._net.eval()
 
-        if self._global_step != 0 and self._global_step % FLAGS.AUX_ITERATION == 0:
+        with torch.no_grad():
 
-
-            # Fetch the next batch of data with larcv
-            # (Make sure to pull from the validation set)
-            minibatch_data = self.fetch_next_batch('aux')        
+            if self._global_step != 0 and self._global_step % FLAGS.AUX_ITERATION == 0:
 
 
-            # Convert the input data to torch tensors
-            minibatch_data = self.to_torch(minibatch_data)
-            
-            # Run a forward pass of the model on the input image:
-            logits = self._net(minibatch_data['image'])
-
-            # # Here, we have to map the logit keys to aux keys
-            # for key in logits.keys():
-            #     new_key = 'aux_' + key
-            #     logits[new_key] = logits.pop(key)
+                # Fetch the next batch of data with larcv
+                # (Make sure to pull from the validation set)
+                minibatch_data = self.fetch_next_batch('aux')        
 
 
+                # Convert the input data to torch tensors
+                minibatch_data = self.to_torch(minibatch_data)
+                
+                # Run a forward pass of the model on the input image:
+                logits = self._net(minibatch_data['image'])
 
-            # Compute the loss
-            loss = self._calculate_loss(minibatch_data, logits)
+                # # Here, we have to map the logit keys to aux keys
+                # for key in logits.keys():
+                #     new_key = 'aux_' + key
+                #     logits[new_key] = logits.pop(key)
 
-            # Compute the metrics for this iteration:
-            metrics = self._compute_metrics(logits, minibatch_data, loss)
 
 
-            self.log(metrics, saver="test")
-            self.summary(metrics, saver="test")
+                # Compute the loss
+                loss = self._calculate_loss(minibatch_data, logits)
 
-            return metrics
+                # Compute the metrics for this iteration:
+                metrics = self._compute_metrics(logits, minibatch_data, loss)
+
+
+                self.log(metrics, saver="test")
+                self.summary(metrics, saver="test")
+
+                return metrics
 
     def ana_step(self, iteration=None):
 

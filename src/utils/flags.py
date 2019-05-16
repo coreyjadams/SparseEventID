@@ -78,7 +78,7 @@ class FLAGS(Borg):
         self.LOG_DIRECTORY         = './log'
         self.CHECKPOINT_DIRECTORY  = None
 
-        self.DISTRIBUTED           = True
+        self.DISTRIBUTED           = False
 
         # To be clear, this is specifying the image mode from larcv ThreadIO,
         # Not the input to the network

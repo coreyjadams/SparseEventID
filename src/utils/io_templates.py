@@ -9,7 +9,7 @@ def train_io(input_file, image_dim, label_mode, prepend_names=""):
         max_voxels = 10000
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"sbndwire\"", max_voxels=max_voxels)
     else:
-        max_voxels = 15000
+        max_voxels = 18000
         data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
 
     label_proc = gen_label_filler(label_mode, prepend_names)
@@ -31,7 +31,7 @@ def test_io(input_file, image_dim, label_mode, prepend_names="aux_"):
         max_voxels = 10000
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"sbndwire\"", max_voxels=max_voxels)
     else:
-        max_voxels = 15000
+        max_voxels = 18000
         data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
 
     label_proc = gen_label_filler(label_mode, prepend_names)
@@ -53,7 +53,7 @@ def ana_io(input_file, image_dim, label_mode, prepend_names=""):
         max_voxels = 10000
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"sbndwire\"", max_voxels=max_voxels)
     else:
-        max_voxels = 15000
+        max_voxels = 18000
         data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
 
 

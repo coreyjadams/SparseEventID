@@ -50,11 +50,15 @@ def main():
     if FLAGS.MODE == 'iotest':
         trainer.initialize(io_only=True)
 
+        label_stats = numpy.zeros((36,))
+
         print("running")
         time.sleep(0.1)
         for i in range(FLAGS.ITERATIONS):
             start = time.time()
             mb = trainer.fetch_next_batch()
+            label_stats += numpy.sum(mb['label'], axis=0)
+
             end = time.time()
             if not FLAGS.DISTRIBUTED:
                 print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
@@ -62,9 +66,10 @@ def main():
                 if trainer._rank == 0:
                     print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
             # time.sleep(0.5)
+        print(label_stats)
 
 
     trainer.stop()
 
 if __name__ == '__main__':
-    main()
+    main()  
