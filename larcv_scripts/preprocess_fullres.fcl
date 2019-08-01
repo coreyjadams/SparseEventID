@@ -68,10 +68,13 @@
 ProcessDriver: {
   Verbosity:       0
   EnableFilter:    true
-  RandomAccess:    true
-  RandomSeed:      -1
-  ProcessType:     ["Cluster2DThreshold","CompressAndEmbed","Tensor2DFromImage2D","QSumFilter","Tensor3DFromCluster3D","ThresholdTensor3D","EmptyTensorFilter","ParentParticleSeg","EventPIDLabel"]
-  ProcessName:     ["Cluster2DThreshold","CompressAndEmbed","Tensor2DFromImage2D","QSumFilter","Tensor3DFromCluster3D","ThresholdTensor3D","EmptyTensorFilter","ParentParticleSeg","EventPIDLabel"]
+  RandomAccess:    false
+  RandomSeed:      0
+  ProcessType:     ["Threshold"]
+  ProcessList:     ["Cluster2DThreshold"]
+
+  #ProcessType:     ["Threshold","CompressAndEmbed","Tensor2DFromImage2D","QSumFilter","Tensor3DFromCluster3D","ThresholdTensor3D","EmptyTensorFilter","ParentParticleSeg","EventPIDLabel"]
+  #ProcessName:     ["Cluster2DThreshold","CompressAndEmbed","Tensor2DFromImage2D","QSumFilter","Tensor3DFromCluster3D","ThresholdTensor3D","EmptyTensorFilter","ParentParticleSeg","EventPIDLabel"]
   #StartEntry: 0
   #NumEntries: 10
 
@@ -81,13 +84,13 @@ ProcessDriver: {
     Verbosity:   2
     Name:        "IOManager"
     IOMode:      2
-    OutFileName: "out.root"
+    OutFileName: "out.h5"
     InputFiles:  []
     InputDirs:   []
 
     # Everything in one file:
-    StoreOnlyType: ["cluster2d","cluster2d","sparse2d","cluster3d","cluster3d","sparse3d","particle","particle","particle","particle","particle","particle","particle"]
-    StoreOnlyName: ["sbndneutrino","sbndsegmerged","sbndwire","sbndneutrino","sbndsegmerged","sbndvoxels","neutID","protID","cpiID","npiID","sbndneutrino","sbdnsegmerged","all"]
+    #StoreOnlyType: ["cluster2d","cluster2d","sparse2d","cluster3d","cluster3d","sparse3d","particle","particle","particle","particle","particle","particle","particle"]
+    #StoreOnlyName: ["sbndneutrino","sbndsegmerged","sbndwire","sbndneutrino","sbndsegmerged","sbndvoxels","neutID","protID","cpiID","npiID","sbndneutrino","sbdnsegmerged","all"]
 
 
   }
@@ -95,61 +98,61 @@ ProcessDriver: {
   ProcessList: {
 
     # Image manipulations: 
-
     Cluster2DThreshold: {
-      Cluster2DProducer: "sbndseg"
-      OutputProducer:    "sbndseg"
-      Threshold:         0.05
+      ProducerList:       ["sbndseg"]
+      ProductList:        ["cluster2d"]
+      OutputProducerList: ["sbndseg"]
+      Threshold:          [0.5]
     }
-    CompressAndEmbed: {
-      Producer:          ["sbndwire","sbndneutrino","sbndseg"]
-      DataType:          ["image2d","cluster2d","cluster2d"]
-      RowCompression:    [1, 1, 1]
-      ColCompression:    [1, 1, 1]
-      Mode:              [0, 0, 0]
-      OutputCols:        [2048, 2048, 2048]
-      OutputRows:        [1280, 1280, 1280]
-    }
-    Tensor3DFromCluster3D: {
-      Cluster3DProducer:   "sbndseg"
-      OutputProducer:      "sbndvoxels"
-    }
-
-    EmptyTensorFilter: {
-      Tensor3DProducer: "sbndvoxels"
-      MinVoxel3DCount: 50
-    }
-    ThresholdTensor3D: {
-      Cluster2DProducer: ["sbndvoxels", "sbndlepton"]
-      OutputProducer:    ["sbndvoxels", "sbndlepton"]
-      Threshold:         0.5
-    }
-    ParentParticleSeg: {
-      Cluster2dProducer:  "sbndseg"
-      Cluster3dProducer:  "sbndseg"
-      OutputProducer:     "sbndsegmerged"
-      ParticleProducer:   "sbndseg"
-    }
-    EventPIDLabel: {
-      OutputProducer:       "pid"
-      ParticleProducer:     "sbndseg"
-      NeutrinoProducer:     "sbndneutrino"
-      ProtonThreshold:      0.020
-      ChargedPionThreshold: 0.010
-      NeutralPionThreshold: 0.000
-    }
-    QSumFilter: {
-      ImageProducer: "sbndwire"
-      MinQSum:       [100, 100, 100]
-      MinPixel:      [20 , 20 , 20 ]
-      MinADC:        [20 , 20 , 20 ]
-    }
-    Tensor2DFromImage2D: {
-      ImageProducer: "sbndwire"
-      OutputProducer: "sbndwire"
-      ProjectionIDs: [0,1,2]
-      Thresholds: [10.0,10.0,10.0]
-    }
+#    CompressAndEmbed: {
+#      Producer:          ["sbndwire","sbndneutrino","sbndseg"]
+#      DataType:          ["image2d","cluster2d","cluster2d"]
+#      RowCompression:    [1, 1, 1]
+#      ColCompression:    [1, 1, 1]
+#      Mode:              [0, 0, 0]
+#      OutputCols:        [2048, 2048, 2048]
+#      OutputRows:        [1280, 1280, 1280]
+#    }
+#    Tensor3DFromCluster3D: {
+#      Cluster3DProducer:   "sbndseg"
+#      OutputProducer:      "sbndvoxels"
+#    }
+#
+#    EmptyTensorFilter: {
+#      Tensor3DProducer: "sbndvoxels"
+#      MinVoxel3DCount: 50
+#    }
+#    ThresholdTensor3D: {
+#      Cluster2DProducer: ["sbndvoxels", "sbndlepton"]
+#      OutputProducer:    ["sbndvoxels", "sbndlepton"]
+#      Threshold:         0.5
+#    }
+#    ParentParticleSeg: {
+#      Cluster2dProducer:  "sbndseg"
+#      Cluster3dProducer:  "sbndseg"
+#      OutputProducer:     "sbndsegmerged"
+#      ParticleProducer:   "sbndseg"
+#    }
+#    EventPIDLabel: {
+#      OutputProducer:       "pid"
+#      ParticleProducer:     "sbndseg"
+#      NeutrinoProducer:     "sbndneutrino"
+#      ProtonThreshold:      0.020
+#      ChargedPionThreshold: 0.010
+#      NeutralPionThreshold: 0.000
+#    }
+#    QSumFilter: {
+#      ImageProducer: "sbndwire"
+#      MinQSum:       [100, 100, 100]
+#      MinPixel:      [20 , 20 , 20 ]
+#      MinADC:        [20 , 20 , 20 ]
+#    }
+#    Tensor2DFromImage2D: {
+#      ImageProducer: "sbndwire"
+#      OutputProducer: "sbndwire"
+#      ProjectionIDs: [0,1,2]
+#      Thresholds: [10.0,10.0,10.0]
+#    }
   }
 }
 
