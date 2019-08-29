@@ -408,7 +408,7 @@ class resnet3D(FLAGS):
         self.VERBOSITY             = 0
         self.N_INITIAL_FILTERS     = 32
         self.RES_BLOCKS_PER_LAYER  = 2
-        self.NETWORK_DEPTH         = 5
+        self.NETWORK_DEPTH         = 8
         self.WEIGHT_DECAY          = 1e-4
         self.SPARSE                = True
         self.INPUT_DIMENSION       = '3D' 

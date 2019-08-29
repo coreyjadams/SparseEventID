@@ -115,6 +115,7 @@ class SparseConvolutionDownsample(nn.Module):
         return out
 
 
+
 class SparseBlockSeries(torch.nn.Module):
 
 
@@ -148,7 +149,9 @@ class ResNet(torch.nn.Module):
 
 
         # Create the sparse input tensor:
-        self.input_tensor = scn.InputLayer(dimension=3, spatial_size=(512))
+        # The real spatial size of the inputs is (1333, 1333, 1666)
+        # But, this size is stupid.
+        self.input_tensor = scn.InputLayer(dimension=3, spatial_size=(1536,1536,1536))
 
         # Here, define the layers we will need in the forward path:
 
@@ -159,7 +162,8 @@ class ResNet(torch.nn.Module):
 
         # We apply an initial convolution, to each plane, to get n_inital_filters
 
-        self.initial_convolution = scn.SubmanifoldConvolution(3, 1, FLAGS.N_INITIAL_FILTERS, filter_size=5, bias=False)
+        self.initial_convolution = scn.SubmanifoldConvolution(3, 1, 
+            FLAGS.N_INITIAL_FILTERS, filter_size=5, bias=False)
 
         n_filters = FLAGS.N_INITIAL_FILTERS
         # Next, build out the convolution steps
@@ -288,8 +292,8 @@ class ResNet(torch.nn.Module):
                 # Apply the bottle neck to make the right number of output filters:
                 output[key] = self.bottleneck[key](output[key])
 
-                output[key] = self.sparse_to_dense[key](output[key])
 
+                output[key] = self.sparse_to_dense[key](output[key])
                 # Apply global average pooling 
                 kernel_size = output[key].shape[2:]
                 output[key] = torch.squeeze(nn.AvgPool3d(kernel_size, ceil_mode=False)(output[key]))

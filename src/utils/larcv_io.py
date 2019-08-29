@@ -200,7 +200,7 @@ class ThreadIOConfig(CoreConfig):
         if self._params['RandomSeed'] is None:
             self._params['RandomSeed'] = "0"
         if self._params['RandomAccess'] is None:
-            self._params['RandomAccess'] = "2"
+            self._params['RandomAccess'] = "0"
 
         self._defaults_set = True
 

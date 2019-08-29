@@ -8,7 +8,7 @@ import numpy
 
 import torch
 
-from larcv import larcv_interface
+from larcv import queueloader
 
 from . import flags
 from . import data_transforms
@@ -29,7 +29,7 @@ class trainercore(object):
 
     '''
     def __init__(self,):
-        self._larcv_interface = larcv_interface.larcv_interface()
+        self._larcv_interface = queueloader.queue_interface()
         self._iteration       = 0
         self._global_step     = -1
 
@@ -40,7 +40,7 @@ class trainercore(object):
             os.unlink(f.name)
             
 
-    def _initialize_io(self):
+    def _initialize_io(self, color=0):
 
         # Use the templates to generate a configuration string, which we store into a temporary file
         if FLAGS.TRAINING:
@@ -84,7 +84,7 @@ class trainercore(object):
                 if key != 'image':
                     FLAGS.KEYWORD_LABEL.append(key)
 
-        self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys)
+        self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys, color)
 
         if not FLAGS.TRAINING:
             self._larcv_interface._dataloaders['primary'].set_next_index(0)
@@ -122,7 +122,7 @@ class trainercore(object):
 
 
 
-                self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys)
+                self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys, color)
 
         if FLAGS.OUTPUT_FILE is not None:
             if not FLAGS.TRAINING:
@@ -435,7 +435,7 @@ class trainercore(object):
             for key in logits:
                 values, target = torch.max(inputs[key], dim=1)
 
-                temp_loss = self._criterion[key](logits[key], target= target)
+                temp_loss = self._criterion[key](logits[key], target=target)
                 # print(temp_loss.shape)
                 # temp_loss *= self._label_weights[key]
                 # print(temp_loss.shape)
@@ -553,17 +553,18 @@ class trainercore(object):
         minibatch_data = self._larcv_interface.fetch_minibatch_data(mode, fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(mode)
 
-
         for key in minibatch_data:
             if key == 'entries' or key == 'event_ids':
                 continue
             minibatch_data[key] = numpy.reshape(minibatch_data[key], minibatch_dims[key])
 
         # Strip off the primary/aux label in the keys:
-        for key in minibatch_data:
-            new_key = key.replace('aux_','')
-            minibatch_data[new_key] = minibatch_data.pop(key)            
-
+        if mode != 'primary':
+            # Can't do this in a loop due to limitations of python's dictionaries.
+            minibatch_data["label_cpi"]  = minibatch_data.pop("aux_label_cpi")            
+            minibatch_data["label_npi"]  = minibatch_data.pop("aux_label_npi")            
+            minibatch_data["label_prot"] = minibatch_data.pop("aux_label_prot")            
+            minibatch_data["label_neut"] = minibatch_data.pop("aux_label_neut")            
 
 
         # Here, do some massaging to convert the input data to another format, if necessary:
@@ -670,7 +671,6 @@ class trainercore(object):
         # print("Completed Forward pass")
         # Compute the loss based on the logits
         loss = self._calculate_loss(minibatch_data, logits)
-        # print("Completed loss")
 
         # Compute the gradients for the network parameters:
         loss.backward()

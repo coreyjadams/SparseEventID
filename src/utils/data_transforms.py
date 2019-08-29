@@ -69,6 +69,7 @@ def larcvsparse_to_scnsparse_2d(input_array):
     n_planes = input_array.shape[1]
     batch_size = input_array.shape[0]
 
+
     raw_planes = numpy.split(input_array,n_planes, axis=1)
 
     output_list = []
@@ -82,8 +83,8 @@ def larcvsparse_to_scnsparse_2d(input_array):
         # Next, figure out the x, y, value coordinates:
         x,y,features = numpy.split(plane, 3, axis=-1)
 
-        non_zero_locs = numpy.where(features != -999)
 
+        non_zero_locs = numpy.where(features != -999)
         # Pull together the different dimensions:
         x = x[non_zero_locs]
         y = y[non_zero_locs]

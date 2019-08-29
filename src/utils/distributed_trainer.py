@@ -10,7 +10,7 @@ import horovod.torch as hvd
 hvd.init()
 
 
-from larcv.distributed_larcv_interface import larcv_interface
+from larcv.distributed_queue_interface import queue_interface
 
 
 from . import flags
@@ -123,7 +123,7 @@ class distributed_trainer(trainercore):
             os.environ['CUDA_VISIBLE_DEVICES'] = str(hvd.local_rank())
             
 
-        self._larcv_interface = larcv_interface(root=root_rank)
+        self._larcv_interface = queue_interface()
         self._iteration       = 0
         self._rank            = hvd.rank()
         self._cleanup         = []
@@ -192,7 +192,7 @@ class distributed_trainer(trainercore):
 
         print("HVD rank: {}".format(hvd.rank()))
 
-        self._initialize_io()
+        self._initialize_io(color=self._rank)
 
         # print("Rank {}".format(hvd.rank()) + " Initialized IO")
         if io_only:

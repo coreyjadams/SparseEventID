@@ -104,7 +104,7 @@ def gen_sparse2d_data_filler(name, producer, max_voxels):
     proc.set_param("MaxVoxels",         max_voxels)
     proc.set_param("Channels",          "[0,1,2]")
     proc.set_param("UnfilledVoxelValue","-999")
-    proc.set_param("Augment",           "true")
+    proc.set_param("Augment",           "false")
 
     return proc
 

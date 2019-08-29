@@ -153,9 +153,9 @@ class ResNet(torch.nn.Module):
 
         # Create the sparse input tensor:
         # (first spatial dim is plane)
-        self.input_tensor = scn.InputLayer(dimension=3, spatial_size=[FLAGS.NPLANES,512,512])
+        self.input_tensor = scn.InputLayer(dimension=3, spatial_size=[FLAGS.NPLANES,2048, 1280])
 
-        spatial_size = 512
+        spatial_size = [2048, 1280]
 
         
         # The convolutional layers, which can be shared or not across planes,
@@ -180,7 +180,7 @@ class ResNet(torch.nn.Module):
             self.pre_convolutional_layers.append(
                 SparseBlockSeries(inplanes = n_filters, 
                     n_blocks = FLAGS.RES_BLOCKS_PER_LAYER,
-                    nplanes =1,
+                    nplanes  = 1,
                     residual = True)
                 )
             self.pre_convolutional_layers.append(
@@ -190,7 +190,7 @@ class ResNet(torch.nn.Module):
                 )
             n_filters = out_filters
 
-            spatial_size /= 2
+            spatial_size =  [ ss / 2 for ss in spatial_size ]
             self.add_module("pre_merge_conv_{}".format(layer), 
                 self.pre_convolutional_layers[-2])
             self.add_module("pre_merge_down_{}".format(layer), 
@@ -218,7 +218,7 @@ class ResNet(torch.nn.Module):
                 )
             n_filters = out_filters
 
-            spatial_size /= 2
+            spatial_size =  [ ss / 2 for ss in spatial_size ]
 
             self.add_module("post_merge_conv_{}".format(layer), 
                 self.post_convolutional_layers[-2])
@@ -237,7 +237,7 @@ class ResNet(torch.nn.Module):
                 n_filters, 
                 FLAGS.RES_BLOCKS_PER_LAYER,
                 nplanes=FLAGS.NPLANES)
-            spatial_size /= 2
+            spatial_size =  [ ss / 2 for ss in spatial_size ]
 
             self.bottleneck = scn.SubmanifoldConvolution(dimension=3, 
                         nIn=n_filters, 
@@ -255,7 +255,7 @@ class ResNet(torch.nn.Module):
                         residual = True)
                     for key in output_shape
                 }
-            spatial_size /= 2
+            spatial_size =  [ ss / 2 for ss in spatial_size ]
             self.bottleneck  = { 
                     key : scn.SubmanifoldConvolution(dimension=3, 
                         nIn=n_filters, 
@@ -306,7 +306,6 @@ class ResNet(torch.nn.Module):
 
         # Convert to the right format:
         x = self.input_tensor(x )
-
         # Apply all of the forward layers:
         x = self.initial_convolution(x)
         for i in range(len(self.pre_convolutional_layers)):
@@ -315,7 +314,6 @@ class ResNet(torch.nn.Module):
 
         for i in range(len(self.post_convolutional_layers)):
             x = self.post_convolutional_layers[i](x)
-
 
 
         # Apply the final steps to get the right output shape
