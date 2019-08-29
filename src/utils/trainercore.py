@@ -547,10 +547,9 @@ class trainercore(object):
     def fetch_next_batch(self, mode='primary', metadata=False):
 
         # For the serial mode, call next here:
-        if not FLAGS.DISTRIBUTED:
-            self._larcv_interface.next(mode)
 
-        minibatch_data = self._larcv_interface.fetch_minibatch_data(mode, fetch_meta_data=metadata)
+        self._larcv_interface.prepare_next(mode)
+        minibatch_data = self._larcv_interface.fetch_minibatch_data(mode, pop=True, fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(mode)
 
         for key in minibatch_data:
