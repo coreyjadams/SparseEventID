@@ -8,6 +8,13 @@ __pycache__/
 # C extensions
 *.so
 
+#Cobalt stuff:
+*.output
+*.error
+*.cobaltlog
+*.qsub
+*.sh
+
 # Distribution / packaging
 .Python
 build/
