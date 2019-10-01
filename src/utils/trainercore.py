@@ -30,7 +30,10 @@ class trainercore(object):
 
     '''
     def __init__(self,):
-        self._larcv_interface = queueloader.queue_interface(random_access_mode="serial_access")
+        if not FLAGS.TRAINING:
+            self._larcv_interface = queueloader.queue_interface(random_access_mode="serial_access")
+        else:
+            self._larcv_interface = queueloader.queue_interface()
         # self._larcv_interface = threadloader.thread_interface()
         self._iteration       = 0
         self._global_step     = -1
