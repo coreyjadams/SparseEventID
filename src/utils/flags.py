@@ -83,6 +83,7 @@ class FLAGS(Borg):
         # To be clear, this is specifying the image mode from larcv ThreadIO,
         # Not the input to the network
         self.IMAGE_MODE            = 'sparse' # Can also be 'sparse'
+        self.IMAGE_TYPE            = '3d' # Can also be '2d'
 
         # IO parameters  
         # IO has a 'default' file configuration and an optional
@@ -190,7 +191,7 @@ class FLAGS(Borg):
         self.train_parser.add_argument('-ci','--checkpoint-iteration', type=int, default=self.CHECKPOINT_ITERATION,
                                   help='Period (in steps) to store snapshot of weights [default: {}]'.format(self.CHECKPOINT_ITERATION))
 
-        self.train_parser.add_argument('--lr-schedule', type=str, choices=['flat', '1cycle', 'decay'], default=self.LR_SCHEDULE,
+        self.train_parser.add_argument('--lr-schedule', type=str, choices=['flat', '1cycle', 'triangle_clr', 'decay', 'expincrease'], default=self.LR_SCHEDULE,
                                   help='Apply a learning rate schedule [default: {}]'.format(self.LR_SCHEDULE))
         self.train_parser.add_argument('--optimizer', type=str, choices=['Adam', 'SGD'], default=self.OPTIMIZER,
                                   help='Optimizer to use [default: {}]'.format(self.OPTIMIZER))
