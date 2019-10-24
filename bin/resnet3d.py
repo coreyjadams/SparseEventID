@@ -13,8 +13,10 @@ sys.path.insert(0,network_dir)
 # import the necessary
 from src.utils import flags
 # from src.networks import resnet3d
-from src.networks import sparseresnet3d
-
+try:
+    from src.networks import sparseresnet3d
+except:
+    print("Couldn't import sparseresnet3d")
 
 def main():
 
