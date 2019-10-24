@@ -88,8 +88,8 @@ def output_io(input_file, output_file):
     # These lines slim down the output file.
     # Without them, 25 output events is 2.8M and takes 38s
     # With the, 25 output events is 119K and takes 36s
-    config.set_param("ReadOnlyType", "[\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\"]")  
-    config.set_param("ReadOnlyName", "[\"cpiID\",\"neutID\",\"npiID\",\"protID\",\"all\",\"sbndsegmerged\"]")  
+    config.set_param("ReadOnlyType", "[\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"cluster2d\",\"cluster2d\",\"cluster3d\",\"cluster3d\"]")  
+    config.set_param("ReadOnlyName", "[\"cpiID\",\"neutID\",\"npiID\",\"protID\",\"all\",\"sbndsegmerged\",\"sbndsegmerged\",\"sbndneutrino\",\"sbndsegmerged\",\"sbndneutrino\"]")  
 
     return config
 
