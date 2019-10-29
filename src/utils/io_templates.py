@@ -7,10 +7,10 @@ from . import larcv_io
 def train_io(input_file, image_dim, label_mode, prepend_names=""):
     if image_dim == "2D":
         max_voxels = 20000
-        data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
+        data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
     else:
         max_voxels = 16000
-        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
+        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
 
     label_proc = gen_label_filler(label_mode, prepend_names)
 
@@ -29,10 +29,10 @@ def train_io(input_file, image_dim, label_mode, prepend_names=""):
 def test_io(input_file, image_dim, label_mode, prepend_names="aux_"):
     if image_dim == "2D":
         max_voxels = 20000
-        data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
+        data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
     else:
         max_voxels = 16000
-        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
+        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
 
     label_proc = gen_label_filler(label_mode, prepend_names)
 
@@ -51,10 +51,10 @@ def test_io(input_file, image_dim, label_mode, prepend_names="aux_"):
 def ana_io(input_file, image_dim, label_mode, prepend_names=""):
     if image_dim == "2D":
         max_voxels = 20000
-        data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
+        data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
     else:
         max_voxels = 16000
-        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"sbndvoxels\"", max_voxels=max_voxels)
+        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
 
 
     label_proc = gen_label_filler(label_mode, prepend_names)
@@ -88,8 +88,8 @@ def output_io(input_file, output_file):
     # These lines slim down the output file.
     # Without them, 25 output events is 2.8M and takes 38s
     # With the, 25 output events is 119K and takes 36s
-    config.set_param("ReadOnlyType", "[\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\"]")  
-    config.set_param("ReadOnlyName", "[\"cpiID\",\"neutID\",\"npiID\",\"protID\",\"all\",\"sbndsegmerged\"]")  
+    config.set_param("ReadOnlyType", "[\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"cluster2d\",\"cluster2d\",\"cluster3d\",\"cluster3d\"]")  
+    config.set_param("ReadOnlyName", "[\"cpiID\",\"neutID\",\"npiID\",\"protID\",\"all\",\"sbndsegmerged\",\"sbndsegmerged\",\"sbndneutrino\",\"sbndsegmerged\",\"sbndneutrino\"]")  
 
     return config
 

@@ -60,7 +60,6 @@ class trainercore(object):
         main_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
         main_file.write(config.generate_config_str())
 
-        print ("dump: ", config.generate_config_str())
         main_file.close()
         self._cleanup.append(main_file)
 
@@ -93,8 +92,8 @@ class trainercore(object):
         self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys, color)
         # self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys)
 
-        #if not FLAGS.TRAINING:
-        #  self._larcv_interface._queueloaders['primary'].set_next_index(0)
+        if not FLAGS.TRAINING:
+            self._larcv_interface.set_next_index('primary', 0)
 
         # All of the additional tools are in case there is a test set up:
         if FLAGS.AUX_FILE is not None:

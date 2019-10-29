@@ -138,6 +138,32 @@ class SparseBlockSeries(torch.nn.Module):
         return x
 
 
+class FullyConnectedSeries(torch.nn.Module):
+
+    def __init__(self, inplanes, outplanes1, outplanes2):
+        torch.nn.Module.__init__(self)
+
+        self.linear1 = nn.Linear(inplanes, outplanes1)
+        self.dropout1 = nn.Dropout()
+
+        self.linear2 = nn.Linear(outplanes1, outplanes2)
+        self.dropout2 = nn.Dropout()
+
+
+        # self.add_module('fc1', self.linear1)
+        # self.add_module('dropout1', self.dropout1)
+        # self.add_module('fc2', self.linear2)
+        # self.add_module('dropout2', self.dropout2)
+
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.dropout1(x)
+
+        x = self.linear2(x)
+        x = self.dropout2(x)
+
+        return x
+
 
 def filter_increase(input_filters):
     # return input_filters * 2
@@ -256,23 +282,50 @@ class ResNet(torch.nn.Module):
                     for key in output_shape
                 }
             spatial_size =  [ ss / 2 for ss in spatial_size ]
-            self.bottleneck  = { 
-                    key : scn.SubmanifoldConvolution(dimension=3, 
-                        nIn=n_filters, 
-                        nOut=output_shape[key][-1], 
-                        filter_size=1, 
-                        bias=False)
-                    for key in output_shape
-                }
-            self.sparse_to_dense = {
-                    key : scn.SparseToDense(dimension=3, nPlanes=output_shape[key][-1])
-                    for key in output_shape
+
+            if not FLAGS.BOTTLENECK_FC:
+                self.bottleneck  = { 
+                        key : scn.SubmanifoldConvolution(dimension=3, 
+                            nIn=n_filters, 
+                            nOut=output_shape[key][-1], 
+                            filter_size=1, 
+                            bias=False)
+                        for key in output_shape
+                    }
+                self.sparse_to_dense = {
+                        key : scn.SparseToDense(dimension=3, nPlanes=output_shape[key][-1])
+                        for key in output_shape
+                    }
+
+            else:
+                self.bottleneck  = { 
+                        key : scn.SubmanifoldConvolution(dimension=3, 
+                            nIn=n_filters, 
+                            nOut=8, 
+                            filter_size=1, 
+                            bias=False)
+                        for key in output_shape
+                    }
+
+                self.sparse_to_dense = {
+                        key : scn.SparseToDense(dimension=3, nPlanes=8)
+                        for key in output_shape
+                    }
+
+                self.fully_connected = {
+                        key : FullyConnectedSeries(inplanes=15360,
+                            outplanes1=64,
+                            outplanes2=output_shape[key][-1]
+                            )
+                        for key in output_shape
                 }
 
             for key in self.final_layer:
                 self.add_module("final_layer_{}".format(key), self.final_layer[key])
                 self.add_module("bottleneck_{}".format(key), self.bottleneck[key])
                 self.add_module("sparse_to_dense_{}".format(key), self.sparse_to_dense[key])
+                if FLAGS.BOTTLENECK_FC:
+                    self.add_module("fully_connected_{}".format(key), self.fully_connected[key])
 
 
         # Sparse to Dense conversion to apply before global average pooling:
@@ -341,13 +394,18 @@ class ResNet(torch.nn.Module):
                 output[key] = self.bottleneck[key](output[key])
                 
 
-
                 # Convert to dense tensor:
                 output[key] = self.sparse_to_dense[key](output[key])
 
-                kernel_size = output[key].shape[2:]
-
-                output[key] = torch.squeeze(nn.AvgPool3d(kernel_size, ceil_mode=False)(output[key]))
+                if FLAGS.BOTTLENECK_FC:
+                    # Flatten
+                    output[key] = output[key].reshape(output[key].size(0), -1)
+                    # Fully connected layers
+                    output[key] = self.fully_connected[key](output[key])    
+                else:
+                    # Apply global average pooling 
+                    kernel_size = output[key].shape[2:]
+                    output[key] = torch.squeeze(nn.AvgPool3d(kernel_size, ceil_mode=False)(output[key]))  
 
                 # Squeeze off the last few dimensions:
                 output[key] = output[key].view([batch_size, output[key].shape[-1]])
