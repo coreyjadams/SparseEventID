@@ -134,8 +134,12 @@ def plot_histogram(ax, data, option='simple', weights=None, n_bins=10, limits=No
             raise ('Length of data and label has to be the same.')
         
     lower = np.zeros(len(loopable_data_h[0]))
+    
+    totals = []
         
     for d, e, l in zip(loopable_data_h, loopable_err, label):
+        
+        totals.append(np.sum(d))
                 
         d = np.append(d, d[-1])
         e = np.append(e, e[-1])
@@ -195,7 +199,7 @@ def plot_histogram(ax, data, option='simple', weights=None, n_bins=10, limits=No
                     alpha=0.4,
                 )
             )
-    return
+    return totals
     
     
 def histogram_helper(data, weights=None, n_bins=10, limits=None):
