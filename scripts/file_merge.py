@@ -1,7 +1,7 @@
 import glob
 import os
 
-outname = 'merged'
+outname = '/gpfs/alpine/scratch/deltutto/nph133/dune_wire_pixel/merged_DUNE_DL_pixsim_150k_samples_20191029/merged_sample_all2'
 files = '/gpfs/alpine/scratch/deltutto/nph133/dune_wire_pixel/original_DUNE_DL_pixsim_150k_samples_20191029/merged_sample_*.h5'
 
 

@@ -172,7 +172,6 @@ class ResNet(torch.nn.Module):
     def __init__(self, output_shape):
         torch.nn.Module.__init__(self)
         # All of the parameters are controlled via the flags module
-        print ("-------------------------------------- output_shape", output_shape, 'output_shape[key][-1]', output_shape['label_npi'][-1])
 
         # Create the sparse input tensor:
         # The real spatial size of the inputs is (1333, 1333, 1666)
