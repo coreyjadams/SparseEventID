@@ -43,13 +43,13 @@ class trainercore(object):
     def __del__(self):
         for f in self._cleanup:
             os.unlink(f.name)
-            
+
 
     def _initialize_io(self, color=0):
 
         # Use the templates to generate a configuration string, which we store into a temporary file
         if FLAGS.TRAINING:
-            config = io_templates.train_io(input_file=FLAGS.FILE, image_dim=FLAGS.INPUT_DIMENSION, 
+            config = io_templates.train_io(input_file=FLAGS.FILE, image_dim=FLAGS.INPUT_DIMENSION,
                 label_mode=FLAGS.LABEL_MODE)
         else:
             config = io_templates.ana_io(input_file=FLAGS.FILE, image_dim=FLAGS.INPUT_DIMENSION,
@@ -75,7 +75,7 @@ class trainercore(object):
         data_keys = OrderedDict()
         data_keys['image'] = 'data'
         for proc in config._process_list._processes:
-            if proc._name == 'data': 
+            if proc._name == 'data':
                 continue
             else:
                 data_keys[proc._name] = proc._name
@@ -100,7 +100,7 @@ class trainercore(object):
 
 
             if FLAGS.TRAINING:
-                config = io_templates.test_io(input_file=FLAGS.AUX_FILE, image_dim=FLAGS.INPUT_DIMENSION, 
+                config = io_templates.test_io(input_file=FLAGS.AUX_FILE, image_dim=FLAGS.INPUT_DIMENSION,
                     label_mode=FLAGS.LABEL_MODE)
 
                 # Generate a named temp file:
@@ -121,7 +121,7 @@ class trainercore(object):
                 data_keys = OrderedDict()
                 data_keys['image'] = 'aux_data'
                 for proc in config._process_list._processes:
-                    if proc._name == 'aux_data': 
+                    if proc._name == 'aux_data':
                         continue
                     else:
                         data_keys[proc._name] = proc._name
@@ -133,7 +133,7 @@ class trainercore(object):
         if FLAGS.OUTPUT_FILE is not None:
             if not FLAGS.TRAINING:
                 config = io_templates.output_io(input_file=FLAGS.FILE, output_file=FLAGS.OUTPUT_FILE)
-                
+
                 out_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
                 out_file.write(config.generate_config_str())
                 print(config.generate_config_str())
@@ -159,7 +159,7 @@ class trainercore(object):
         self._net = FLAGS._net(output_shape)
 
 
-        if FLAGS.TRAINING: 
+        if FLAGS.TRAINING:
             self._net.train(True)
 
     def initialize(self, io_only=False):
@@ -202,7 +202,7 @@ class trainercore(object):
             self._log_keys = ['loss', 'accuracy']
         elif FLAGS.LABEL_MODE == 'split':
             self._log_keys = ['loss']
-            for key in FLAGS.KEYWORD_LABEL: 
+            for key in FLAGS.KEYWORD_LABEL:
                 self._log_keys.append('acc/{}'.format(key))
 
 
@@ -235,8 +235,8 @@ class trainercore(object):
 
         # here we store the loss weights:
         if FLAGS.LABEL_MODE == 'all':
-            self._label_weights = torch.tensor([ 
-                4930., 247., 2311., 225., 11833., 1592., 3887., 378., 4966., 1169., 1944., 335., 
+            self._label_weights = torch.tensor([
+                4930., 247., 2311., 225., 11833., 1592., 3887., 378., 4966., 1169., 1944., 335.,
                 5430., 201., 1630., 67., 13426., 1314., 3111., 243., 5070., 788., 1464., 163.,
                 5851.,3267.,1685.,183.,7211.,3283.,2744.,302.,5804.,1440.,1302., 204.
                 ], device=device)
@@ -250,7 +250,7 @@ class trainercore(object):
             # These are the raw category occurences
             self._label_weights = {
                 'label_cpi'  : torch.tensor([50932., 61269.], device=device),
-                'label_prot' : torch.tensor([36583., 46790., 28828.], device=device), 
+                'label_prot' : torch.tensor([36583., 46790., 28828.], device=device),
                 'label_npi'  : torch.tensor([70572., 41629.], device=device),
                 'label_neut' : torch.tensor([39452., 39094., 33655.], device=device)
             }
@@ -336,7 +336,7 @@ class trainercore(object):
 
     def save_model(self):
         '''Save the model to file
-        
+
         '''
 
         current_file_path, checkpoint_file_path = self.get_model_filepath()
@@ -370,7 +370,7 @@ class trainercore(object):
                         past_checkpoint_files.update({int(vals[0]) : vals[1].replace(' ', '')})
         except:
             pass
-        
+
 
         # Remove the oldest checkpoints while the number is greater than n_keep
         while len(past_checkpoint_files) >= n_keep:
@@ -391,8 +391,8 @@ class trainercore(object):
 
     def get_model_filepath(self):
         '''Helper function to build the filepath of a model for saving and restoring:
-        
-        
+
+
         '''
 
         # Find the base path of the log directory
@@ -415,19 +415,19 @@ class trainercore(object):
 
 
         # This dataset is not balanced across labels.  So, we can weight the loss according to the labels
-        # 
-        # 'label_cpi': array([1523.,  477.]), 
-        # 'label_prot': array([528., 964., 508.]), 
-        # 'label_npi': array([1699.,  301.]), 
+        #
+        # 'label_cpi': array([1523.,  477.]),
+        # 'label_prot': array([528., 964., 508.]),
+        # 'label_npi': array([1699.,  301.]),
         # 'label_neut': array([655., 656., 689.])
 
-        # You can see that the only category that's truly balanced is the neutrino category.  
-        # The proton category has a ratio of 1 : 2 : 1 which isn't terrible, but can be fixed.  
+        # You can see that the only category that's truly balanced is the neutrino category.
+        # The proton category has a ratio of 1 : 2 : 1 which isn't terrible, but can be fixed.
         # Both the proton and neutrino categories learn well.
         #
         #
         # The pion categories learn poorly, and slowly.  They quickly reach ~75% and ~85% accuracy for c/n pi
-        # Which is just the ratio of the 0 : 1 label in each category.  So, they are learning to predict always zero, 
+        # Which is just the ratio of the 0 : 1 label in each category.  So, they are learning to predict always zero,
         # And it is difficult to bust out of that.
 
 
@@ -500,7 +500,7 @@ class trainercore(object):
 
 
         if self._global_step % FLAGS.LOGGING_ITERATION == 0:
-            
+
             self._current_log_time = datetime.datetime.now()
 
             s = ""
@@ -514,11 +514,11 @@ class trainercore(object):
                 s += ", ".join(["{0}: {1:.3}".format(key, metrics[key]) for key in self._log_keys])
             else:
                 s += ", ".join(["{0}: {1:.3}".format(key, metrics[key]) for key in metrics])
-      
+
 
             try:
                 s += " ({:.2}s / {:.2} IOs / {:.2})".format(
-                    (self._current_log_time - self._previous_log_time).total_seconds(), 
+                    (self._current_log_time - self._previous_log_time).total_seconds(),
                     metrics['io_fetch_time'],
                     metrics['step_time'])
             except:
@@ -562,9 +562,9 @@ class trainercore(object):
 
         # For the serial mode, call next here:
 
-        self._larcv_interface.prepare_next(mode)
         minibatch_data = self._larcv_interface.fetch_minibatch_data(mode, pop=True, fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(mode)
+        self._larcv_interface.prepare_next(mode)
 
         for key in minibatch_data:
             if key == 'entries' or key == 'event_ids':
@@ -574,10 +574,10 @@ class trainercore(object):
         # Strip off the primary/aux label in the keys:
         if mode != 'primary':
             # Can't do this in a loop due to limitations of python's dictionaries.
-            minibatch_data["label_cpi"]  = minibatch_data.pop("aux_label_cpi")            
-            minibatch_data["label_npi"]  = minibatch_data.pop("aux_label_npi")            
-            minibatch_data["label_prot"] = minibatch_data.pop("aux_label_prot")            
-            minibatch_data["label_neut"] = minibatch_data.pop("aux_label_neut")            
+            minibatch_data["label_cpi"]  = minibatch_data.pop("aux_label_cpi")
+            minibatch_data["label_npi"]  = minibatch_data.pop("aux_label_npi")
+            minibatch_data["label_prot"] = minibatch_data.pop("aux_label_prot")
+            minibatch_data["label_neut"] = minibatch_data.pop("aux_label_neut")
 
 
         # Here, do some massaging to convert the input data to another format, if necessary:
@@ -654,7 +654,7 @@ class trainercore(object):
                         )
             else:
                 minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
-        
+
         return minibatch_data
 
     def train_step(self):
@@ -691,7 +691,7 @@ class trainercore(object):
 
         # Compute any necessary metrics:
         metrics = self._compute_metrics(logits, minibatch_data, loss)
-        
+
 
 
         # Add the global step / second to the tensorboard log:
@@ -716,11 +716,11 @@ class trainercore(object):
         metrics['step_time'] = (global_end_time - step_start_time).total_seconds()
 
 
-        self.log(metrics, saver="train") 
+        self.log(metrics, saver="train")
 
         # print("Completed Log")
 
-        self.summary(metrics, saver="train")       
+        self.summary(metrics, saver="train")
 
         # print("Summarized")
 
@@ -755,12 +755,12 @@ class trainercore(object):
 
                 # Fetch the next batch of data with larcv
                 # (Make sure to pull from the validation set)
-                minibatch_data = self.fetch_next_batch('aux')        
+                minibatch_data = self.fetch_next_batch('aux')
 
 
                 # Convert the input data to torch tensors
                 minibatch_data = self.to_torch(minibatch_data)
-                
+
                 # Run a forward pass of the model on the input image:
                 logits = self._net(minibatch_data['image'])
 
@@ -800,7 +800,7 @@ class trainercore(object):
 
         # Convert the input data to torch tensors
         minibatch_data = self.to_torch(minibatch_data)
-        
+
         # Run a forward pass of the model on the input image:
         with torch.no_grad():
             logits = self._net(minibatch_data['image'])
@@ -808,7 +808,7 @@ class trainercore(object):
         if FLAGS.LABEL_MODE == 'all':
             softmax = torch.nn.Softmax(dim=-1)(logits)
         else:
-            softmax = { key : torch.nn.Softmax(dim=-1)(logits[key]) for key in logits } 
+            softmax = { key : torch.nn.Softmax(dim=-1)(logits[key]) for key in logits }
 
         # print('label_neut', minibatch_data['label_neut'])
         # print('label_npi', minibatch_data['label_npi'])
@@ -894,4 +894,3 @@ class trainercore(object):
                 self._saver.close()
             if self._aux_saver is not None:
                 self._aux_saver.close()
-
