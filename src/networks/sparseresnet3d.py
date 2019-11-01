@@ -17,18 +17,21 @@ class SparseBlock(nn.Module):
             nOut=outplanes, 
             filter_size=3, 
             bias=False)
-        
-        # if FLAGS.BATCH_NORM:
-        self.bn1 = scn.BatchNormReLU(outplanes)
-        # self.relu = scn.ReLU()
+
+        if FLAGS.BATCH_NORM:
+            if FLAGS.LEAKY_RELU: self.bn1 = scn.BatchNormLeakyReLU(outplanes)
+            else:                self.bn1 = scn.BatchNormReLU(outplanes)
+        else:
+            if FLAGS.LEAKY_RELU: self.relu = scn.LeakyReLU()
+            else:                self.relu = scn.ReLU()
 
     def forward(self, x):
 
         out = self.conv1(x)
-        # if FLAGS.BATCH_NORM:
-        out = self.bn1(out)
-        # else:
-            # out = self.relu(out)
+        if FLAGS.BATCH_NORM:
+            out = self.bn1(out)
+        else:
+            out = self.relu(out)
 
         return out
 
@@ -46,9 +49,12 @@ class SparseResidualBlock(nn.Module):
             filter_size = 3, 
             bias=False)
         
-
-        # if FLAGS.BATCH_NORM:
-        self.bn1 = scn.BatchNormReLU(outplanes)
+        if FLAGS.LEAKY_RELU:
+            print ('FLAGS.LEAKY_RELU is true************************************************************')
+        if FLAGS.BATCH_NORM:
+            print ('FLAGS.BATCH_NORM is true************************************************************')
+            if FLAGS.LEAKY_RELU: self.bn1 = scn.BatchNormLeakyReLU(outplanes)
+            else:                self.bn1 = scn.BatchNormReLU(outplanes)
 
         self.conv2 = scn.SubmanifoldConvolution(dimension=3, 
             nIn         = outplanes,
@@ -56,11 +62,13 @@ class SparseResidualBlock(nn.Module):
             filter_size = 3,
             bias        = False)
 
-        # if FLAGS.BATCH_NORM:
-        self.bn2 = scn.BatchNormalization(outplanes)
+        if FLAGS.BATCH_NORM:
+            self.bn2 = scn.BatchNormalization(outplanes)
 
         self.residual = scn.Identity()
-        self.relu = scn.ReLU()
+        
+        if FLAGS.LEAKY_RELU: self.relu = scn.ReLU()
+        else:                self.relu = scn.LeakyReLU()
 
         self.add = scn.AddTable()
 
@@ -69,14 +77,16 @@ class SparseResidualBlock(nn.Module):
         residual = self.residual(x)
 
         out = self.conv1(x)
-        # if FLAGS.BATCH_NORM:
-        out = self.bn1(out)
-        # else:
-            # out = self.relu(out)
+
+        if FLAGS.BATCH_NORM:
+            out = self.bn1(out)
+        else:
+            out = self.relu(out)
+
         out = self.conv2(out)
 
-        # if FLAGS.BATCH_NORM:
-        out = self.bn2(out)
+        if FLAGS.BATCH_NORM:
+            out = self.bn2(out)
 
         # The addition of sparse tensors is not straightforward, since
 
@@ -101,15 +111,18 @@ class SparseConvolutionDownsample(nn.Module):
             filter_stride   = 2,
             bias            = False
         )
-        # if FLAGS.BATCH_NORM:
-        self.bn   = scn.BatchNormalization(outplanes)
-        self.relu = scn.ReLU()
+
+        if FLAGS.BATCH_NORM:
+            self.bn   = scn.BatchNormalization(outplanes)
+            
+        if FLAGS.LEAKY_RELU: self.relu = scn.ReLU()
+        else:                self.relu = scn.LeakyReLU()
 
     def forward(self, x):
         out = self.conv(x)
 
-        # if FLAGS.BATCH_NORM:
-        out = self.bn(out)
+        if FLAGS.BATCH_NORM:
+            out = self.bn(out)
 
         out = self.relu(out)
         return out

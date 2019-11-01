@@ -362,6 +362,8 @@ class resnet(FLAGS):
         self.NPLANES                    = 3
         self.SHARE_WEIGHTS              = True
         self.WEIGHT_DECAY               = 1e-4
+        self.BATCH_NORM                 = True
+        self.LEAKY_RELU                 = False   
 
         # self.BOTTLENECK_FC              = False
 
@@ -400,6 +402,11 @@ class resnet(FLAGS):
         parser.add_argument('--sparse', type=str2bool, default=self.SPARSE,
             help="Run using submanifold sparse convolutions [default: {}]".format(self.SPARSE))
 
+        parser.add_argument('--batch-norm', type=str2bool, default=self.BATCH_NORM,
+            help="Run using batch normalization [default: {}]".format(self.BATCH_NORM))
+        parser.add_argument('--leaky-relu', type=str2bool, default=self.LEAKY_RELU,
+            help="Run using leaky relu [default: {}]".format(self.LEAKY_RELU))
+
         return parser
 
 
@@ -427,6 +434,9 @@ class resnet3D(FLAGS):
         self.SPARSE                = True
         self.INPUT_DIMENSION       = '3D'
 
+        self.BATCH_NORM                 = True
+        self.LEAKY_RELU                 = False   
+
         # self.BOTTLENECK_FC         = False
 
         FLAGS._set_defaults(self)
@@ -452,5 +462,10 @@ class resnet3D(FLAGS):
 
         parser.add_argument('--sparse', type=str2bool, default=self.SPARSE,
             help="Run using submanifold sparse convolutions [default: {}]".format(self.SPARSE))
+
+        parser.add_argument('--batch-norm', type=str2bool, default=self.BATCH_NORM,
+            help="Run using batch normalization [default: {}]".format(self.BATCH_NORM))
+        parser.add_argument('--leaky-relu', type=str2bool, default=self.LEAKY_RELU,
+            help="Run using leaky relu [default: {}]".format(self.LEAKY_RELU))
 
         return parser
