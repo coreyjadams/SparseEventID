@@ -249,10 +249,10 @@ class trainercore(object):
         elif FLAGS.LABEL_MODE == 'split':
             # These are the raw category occurences
             self._label_weights = {
-                'label_cpi'  : torch.tensor([7784., 2216.], device=device),
-                'label_prot' : torch.tensor([2658., 4940., 2402.], device=device), 
-                'label_npi'  : torch.tensor([8448., 1552.], device=device),
-                'label_neut' : torch.tensor([3322., 3317., 3361.], device=device)
+                'label_cpi'  : torch.tensor([50932., 61269.], device=device),
+                'label_prot' : torch.tensor([36583., 46790., 28828.], device=device), 
+                'label_npi'  : torch.tensor([70572., 41629.], device=device),
+                'label_neut' : torch.tensor([39452., 39094., 33655.], device=device)
             }
 
             self._criterion = {}
@@ -260,8 +260,7 @@ class trainercore(object):
             for key in self._label_weights:
                 weights = torch.sum(self._label_weights[key]) / self._label_weights[key]
                 self._label_weights[key] = weights / torch.sum(weights)
-
-
+                print ('Weights for', key, '=', self._label_weights[key])
 
             for key in self._label_weights:
                 self._criterion[key] = torch.nn.CrossEntropyLoss(weight=self._label_weights[key])
