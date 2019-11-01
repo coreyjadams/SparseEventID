@@ -83,6 +83,7 @@ class FLAGS(Borg):
         # To be clear, this is specifying the image mode from larcv ThreadIO,
         # Not the input to the network
         self.IMAGE_MODE            = 'sparse' # Can also be 'sparse'
+        self.IMAGE_TYPE            = '3d' # Can also be '2d'
 
         # IO parameters  
         # IO has a 'default' file configuration and an optional
@@ -190,7 +191,7 @@ class FLAGS(Borg):
         self.train_parser.add_argument('-ci','--checkpoint-iteration', type=int, default=self.CHECKPOINT_ITERATION,
                                   help='Period (in steps) to store snapshot of weights [default: {}]'.format(self.CHECKPOINT_ITERATION))
 
-        self.train_parser.add_argument('--lr-schedule', type=str, choices=['flat', '1cycle', 'decay'], default=self.LR_SCHEDULE,
+        self.train_parser.add_argument('--lr-schedule', type=str, choices=['flat', '1cycle', 'triangle_clr', 'decay', 'expincrease'], default=self.LR_SCHEDULE,
                                   help='Apply a learning rate schedule [default: {}]'.format(self.LR_SCHEDULE))
         self.train_parser.add_argument('--optimizer', type=str, choices=['Adam', 'SGD'], default=self.OPTIMIZER,
                                   help='Optimizer to use [default: {}]'.format(self.OPTIMIZER))
@@ -354,6 +355,8 @@ class resnet(FLAGS):
         self.SHARE_WEIGHTS              = True
         self.WEIGHT_DECAY               = 1e-4
 
+        # self.BOTTLENECK_FC              = False
+
         self.SPARSE                     = True
 
         self.INPUT_DIMENSION            = '2D' 
@@ -382,6 +385,9 @@ class resnet(FLAGS):
             help="Number of planes to split the initial image into [default: {}]".format(self.NPLANES))
         parser.add_argument('--share-weights', type=str2bool, default=self.SHARE_WEIGHTS,
             help="Whether or not to share weights across planes [default: {}]".format(self.SHARE_WEIGHTS))
+
+        # parser.add_argument('--bottleneck-fully-connected', type=str2bool, default=self.BOTTLENECK_FC,
+        #     help="Whether or not to apply a fully connected layer with dropout as bottleneck [default: {}]".format(self.BOTTLENECK_FC))
 
         parser.add_argument('--sparse', type=str2bool, default=self.SPARSE,
             help="Run using submanifold sparse convolutions [default: {}]".format(self.SPARSE))
@@ -413,6 +419,8 @@ class resnet3D(FLAGS):
         self.SPARSE                = True
         self.INPUT_DIMENSION       = '3D' 
 
+        # self.BOTTLENECK_FC         = False
+
         FLAGS._set_defaults(self)
 
     def _add_default_network_configuration(self, parser):
@@ -430,6 +438,9 @@ class resnet3D(FLAGS):
 
         parser.add_argument('--weight-decay', type=float, default=self.WEIGHT_DECAY,
             help="Weight decay strength [default: {}]".format(self.WEIGHT_DECAY))
+
+        # parser.add_argument('--bottleneck-fully-connected', type=str2bool, default=self.BOTTLENECK_FC,
+        #     help="Whether or not to apply a fully connected layer with dropout as bottleneck [default: {}]".format(self.BOTTLENECK_FC))
 
         parser.add_argument('--sparse', type=str2bool, default=self.SPARSE,
             help="Run using submanifold sparse convolutions [default: {}]".format(self.SPARSE))

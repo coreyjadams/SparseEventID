@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import math
 from collections import OrderedDict
 
 import numpy
@@ -87,9 +88,27 @@ def one_cycle_clr(step):
     else:
         value = (intra_step / end_steps)*-1.0
 
-
+    print ('using', base_multiplier + value)
     return base_multiplier + value
 
+min_lr = {}
+max_lr = {}
+min_lr['2d'] = 0.0002
+max_lr['2d'] = 0.0018
+min_lr['3d'] = 0.0001
+max_lr['3d'] = 0.0035
+
+def triangle_clr(step):
+    '''
+    Implements the triangular cycle 
+    learning rate schedule
+    '''
+    step_size = 100
+    cycle = math.floor(1 + step / (2 * step_size))
+    func = 1 - abs(step / step_size - 2 * cycle + 1)
+    diff = max_lr[FLAGS.IMAGE_TYPE] - min_lr[FLAGS.IMAGE_TYPE]
+
+    return (min_lr[FLAGS.IMAGE_TYPE] + diff * max(0, func)) / FLAGS.LEARNING_RATE
 
 # def triangle_clr(step):
 
@@ -104,6 +123,18 @@ def one_cycle_clr(step):
 
 #     cycle = step % (cycle_epochs*epoch_steps)
 
+def exp_increase_lr(step):
+  '''
+  This function increases the learning rate exponentialy 
+  from start_lr to end_lr. It can be used to study the loss 
+  vs. learning rate and fins a proper interaval in which 
+  to vary the learning rate.
+  '''
+
+  start_lr = FLAGS.LEARNING_RATE  # 1.e-7
+  end_lr = FLAGS.LEARNING_RATE * 1.e8
+
+  return math.exp(step * math.log(end_lr / start_lr) / FLAGS.ITERATIONS)
 
 class distributed_trainer(trainercore):
     '''
@@ -155,9 +186,18 @@ class distributed_trainer(trainercore):
         if FLAGS.LR_SCHEDULE == '1cycle':
             self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self._opt, one_cycle_clr, last_epoch=-1)
+        elif FLAGS.LR_SCHEDULE == 'triangle_clr':
+            self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+                self._opt, triangle_clr, last_epoch=-1)
+            #self._lr_scheduler = torch.optim.lr_scheduler.CyclicLR(
+            #    self._opt, base_lr=min_lr[FLAGS.IMAGE_TYPE], max_lr=max_lr[FLAGS.IMAGE_TYPE], 
+            #    step_size_up=100, cycle_momentum=False, last_epoch=-1)
         elif FLAGS.LR_SCHEDULE == 'decay':
             self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self._opt, decay_after_epoch, last_epoch=-1)
+        elif FLAGS.LR_SCHEDULE == 'expincrease':
+            self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+                self._opt, exp_increase_lr, last_epoch=-1)
         else:
             self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self._opt, constant_lr, last_epoch=-1)

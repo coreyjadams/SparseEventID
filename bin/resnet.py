@@ -19,7 +19,7 @@ def main():
     FLAGS = flags.resnet()
     FLAGS.parse_args()
     # FLAGS.dump_config()
-
+    FLAGS.IMAGE_TYPE = '2d'
     
 
 
@@ -69,8 +69,8 @@ def main():
             # time.sleep(0.5)
         # print(label_stats)
 
-
-    trainer.stop()
+    if not FLAGS.DISTRIBUTED:
+        trainer.stop()
 
 if __name__ == '__main__':
     main()  

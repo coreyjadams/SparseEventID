@@ -190,13 +190,13 @@ class ThreadIOConfig(CoreConfig):
     def set_defaults(self):
 
         if self._params['Verbosity'] is None:
-            self._params['Verbosity'] = "0"
+            self._params['Verbosity'] = "2"
         if self._params['EnableFilter'] is None:
             self._params['EnableFilter'] = "false"
         if self._params['NumThreads'] is None:
-            self._params['NumThreads'] = "4"
+            self._params['NumThreads'] = "1"
         if self._params['NumBatchStorage'] is None:
-            self._params['NumBatchStorage'] = "4"
+            self._params['NumBatchStorage'] = "1"
         if self._params['RandomSeed'] is None:
             self._params['RandomSeed'] = "0"
         if self._params['RandomAccess'] is None:

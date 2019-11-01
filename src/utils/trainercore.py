@@ -9,6 +9,7 @@ import numpy
 import torch
 
 from larcv import queueloader
+#from larcv import threadloader
 
 from . import flags
 from . import data_transforms
@@ -29,7 +30,11 @@ class trainercore(object):
 
     '''
     def __init__(self,):
-        self._larcv_interface = queueloader.queue_interface()
+        if not FLAGS.TRAINING:
+            self._larcv_interface = queueloader.queue_interface(random_access_mode="serial_access")
+        else:
+            self._larcv_interface = queueloader.queue_interface()
+        # self._larcv_interface = threadloader.thread_interface()
         self._iteration       = 0
         self._global_step     = -1
 
@@ -85,9 +90,10 @@ class trainercore(object):
                     FLAGS.KEYWORD_LABEL.append(key)
 
         self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys, color)
+        # self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys)
 
         if not FLAGS.TRAINING:
-            self._larcv_interface._dataloaders['primary'].set_next_index(0)
+            self._larcv_interface.set_next_index('primary', 0)
 
         # All of the additional tools are in case there is a test set up:
         if FLAGS.AUX_FILE is not None:
@@ -243,10 +249,10 @@ class trainercore(object):
         elif FLAGS.LABEL_MODE == 'split':
             # These are the raw category occurences
             self._label_weights = {
-                'label_cpi'  : torch.tensor([7784., 2216.], device=device),
-                'label_prot' : torch.tensor([2658., 4940., 2402.], device=device), 
-                'label_npi'  : torch.tensor([8448., 1552.], device=device),
-                'label_neut' : torch.tensor([3322., 3317., 3361.], device=device)
+                'label_cpi'  : torch.tensor([50932., 61269.], device=device),
+                'label_prot' : torch.tensor([36583., 46790., 28828.], device=device), 
+                'label_npi'  : torch.tensor([70572., 41629.], device=device),
+                'label_neut' : torch.tensor([39452., 39094., 33655.], device=device)
             }
 
             self._criterion = {}
@@ -254,8 +260,7 @@ class trainercore(object):
             for key in self._label_weights:
                 weights = torch.sum(self._label_weights[key]) / self._label_weights[key]
                 self._label_weights[key] = weights / torch.sum(weights)
-
-
+                print ('Weights for', key, '=', self._label_weights[key])
 
             for key in self._label_weights:
                 self._criterion[key] = torch.nn.CrossEntropyLoss(weight=self._label_weights[key])
@@ -519,6 +524,12 @@ class trainercore(object):
             except:
                 pass
 
+            try:
+                s += " (LR: {:.4})".format(
+                    self._opt.state_dict()['param_groups'][0]['lr'])
+            except:
+                pass
+
             self._previous_log_time = self._current_log_time
 
             print("{} Step {} metrics: {}".format(saver, self._global_step, s))
@@ -541,7 +552,10 @@ class trainercore(object):
 
             # try to get the learning rate
             # print self._lr_scheduler.get_lr()
-            self._saver.add_scalar("learning_rate", self._opt.state_dict()['param_groups'][0]['lr'], self._global_step)
+            if saver == "test":
+                self._aux_saver.add_scalar("learning_rate", self._opt.state_dict()['param_groups'][0]['lr'], self._global_step)
+            else:
+                self._saver.add_scalar("learning_rate", self._opt.state_dict()['param_groups'][0]['lr'], self._global_step)
             pass
 
     def fetch_next_batch(self, mode='primary', metadata=False):
@@ -811,7 +825,7 @@ class trainercore(object):
             else:
                 for key in softmax:
                     writable_logits = numpy.asarray(softmax[key].cpu())
-                    self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer=key,
+                    self._larcv_interface.write_output(data=writable_logits[0], datatype='tensor1d', producer=key,
                         entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
 
         # If the input data has labels available, compute the metrics:
@@ -827,7 +841,7 @@ class trainercore(object):
                 metrics.update({'it.' : iteration})
 
 
-            self.log(metrics, saver="test")
+            self.log(metrics, saver="ana")
             # self.summary(metrics, saver="test")
 
             return metrics

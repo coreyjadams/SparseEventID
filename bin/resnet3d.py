@@ -13,15 +13,17 @@ sys.path.insert(0,network_dir)
 # import the necessary
 from src.utils import flags
 # from src.networks import resnet3d
-from src.networks import sparseresnet3d
-
+try:
+    from src.networks import sparseresnet3d
+except:
+    print("Couldn't import sparseresnet3d")
 
 def main():
 
     FLAGS = flags.resnet3D()
     FLAGS.parse_args()
     # FLAGS.dump_config()
-
+    FLAGS.IMAGE_TYPE = '3d'
     
 
 
@@ -51,18 +53,30 @@ def main():
         trainer.initialize(io_only=True)
 
         time.sleep(0.1)
+
+        times = []
+
         for i in range(FLAGS.ITERATIONS):
             start = time.time()
             mb = trainer.fetch_next_batch()
             end = time.time()
             if not FLAGS.DISTRIBUTED:
                 print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
+                times.append(end - start)
             else:
                 if trainer._rank == 0:
                     print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
-            # time.sleep(0.5)
+                    times.append(end - start)
+            time.sleep(0.5)
 
-    trainer.stop()
+        if not FLAGS.DISTRIBUTED:
+            print ("Average time to fetch a minibatch of data: {} +- {} seconds.".format(numpy.array(times).mean(), numpy.array(times).std()))
+        else:
+            if trainer._rank == 0: 
+                print ("Average time to fetch a minibatch of data: {} +- {} seconds, (median: {}).".format(numpy.array(times).mean(), numpy.array(times).std(), numpy.median(numpy.array(times))))
+
+    if not FLAGS.DISTRIBUTED:
+        trainer.stop()
 
 if __name__ == '__main__':
     main()
