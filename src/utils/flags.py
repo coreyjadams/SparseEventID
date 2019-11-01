@@ -13,7 +13,7 @@ https://github.com/DeepLearnPhysics/dynamic-gcnn/blob/develop/dgcnn/flags.py
 
 # This class is from here:
 # http://www.aleax.it/Python/5ep.html
-# Which is an incredibly simply and elegenant way 
+# Which is an incredibly simply and elegenant way
 # To enforce singleton behavior
 class Borg:
     _shared_state = {}
@@ -23,16 +23,16 @@ class Borg:
 # This function is to parse strings from argparse into bool
 def str2bool(v):
     '''Convert string to boolean value
-    
-    This function is from stackoverflow: 
+
+    This function is from stackoverflow:
     https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
-    
+
     Arguments:
         v {str} -- [description]
-    
+
     Returns:
         bool -- [description]
-    
+
     Raises:
         argparse -- [description]
     '''
@@ -46,7 +46,7 @@ def str2bool(v):
 
 class FLAGS(Borg):
     '''This class implements global flags through static variables
-    The static-ness is enforced by inheriting from Borg, which it calls first and 
+    The static-ness is enforced by inheriting from Borg, which it calls first and
     foremost in the constructor.
 
     All classes derived from FLAGS should call this constructor first
@@ -85,11 +85,11 @@ class FLAGS(Borg):
         self.IMAGE_MODE            = 'sparse' # Can also be 'sparse'
         self.IMAGE_TYPE            = '3d' # Can also be '2d'
 
-        # IO parameters  
+        # IO parameters
         # IO has a 'default' file configuration and an optional
         # 'auxilliary' configuration.  In Train mode, the default
         # is the training data, aux is testing data.
-        # In inference mode, default is the validation data, 
+        # In inference mode, default is the validation data,
         # aux is the outputdata
         self.FILE                  = "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/train_event_id.root"
         self.IO_VERBOSITY          = 3
@@ -172,16 +172,16 @@ class FLAGS(Borg):
 
         self._parser = argparse.ArgumentParser(description="Configuration Flags")
 
-        subparsers = self._parser.add_subparsers(title="Modules", 
-                                                 description="Valid subcommands", 
-                                                 dest='mode', 
+        subparsers = self._parser.add_subparsers(title="Modules",
+                                                 description="Valid subcommands",
+                                                 dest='mode',
                                                  help="Available subcommands: train, iotest, inference")
-      
-      
+
+
 
         # train parser
         self.train_parser = subparsers.add_parser("train", help="Train")
-        
+
         self.train_parser.add_argument('-lr','--learning-rate', type=float, default=self.LEARNING_RATE,
                                   help='Initial learning rate [default: {}]'.format(self.LEARNING_RATE))
         self.train_parser.add_argument('-si','--summary-iteration', type=int, default=self.SUMMARY_ITERATION,
@@ -224,7 +224,7 @@ class FLAGS(Borg):
             help="Override the destination of output in inference mode [default: {}]".format(self.OUTPUT_FILE))
         # self.inference_parser = self._add_default_parser_configuration(inference_parser)
         # self.iotest_parser    = self._add_default_parser_configuration(iotest_parser)
-      
+
 
     def _add_core_configuration(self, parser):
         # These are core parameters that are important for all modes:
@@ -291,7 +291,7 @@ class FLAGS(Borg):
 
     def dump_config(self):
         print(self.__str__())
-            
+
 
     def get_config(str):
         return str.__str__()
@@ -300,22 +300,30 @@ class FLAGS(Borg):
         try:
             _ = getattr(self, '_parser')
             s = "\n\n-- CONFIG --\n"
-            for name in vars(self):
+            for name in iter(sorted(vars(self))):
                 if name != name.upper(): continue
                 attribute = getattr(self,name)
                 if type(attribute) == type(self._parser): continue
-                s += " %s = %r\n" % (name, getattr(self, name))
+                # s += " %s = %r\n" % (name, getattr(self, name))
+                substring = ' {message:{fill}{align}{width}}: {attr}\n'.format(
+                       message=name,
+                       attr = getattr(self, name),
+                       fill='.',
+                       align='<',
+                       width=30,
+                    )
+                s += substring
             return s
 
         except AttributeError:
             return "ERROR: call parse_args()"
 
-                    
+
     def update(self, args):
         for name,value in args.items():
             if name in ['func']: continue
             setattr(self, name.upper(), args[name])
-        # Take special care to reset the keyword label attribute 
+        # Take special care to reset the keyword label attribute
         # to match the label mode:
         # if self.LABEL_MODE == "split":
         #     self.KEYWORD_LABEL = self.KEYWORD_LABEL_SPLIT
@@ -359,7 +367,7 @@ class resnet(FLAGS):
 
         self.SPARSE                     = True
 
-        self.INPUT_DIMENSION            = '2D' 
+        self.INPUT_DIMENSION            = '2D'
 
         FLAGS._set_defaults(self)
 
@@ -417,7 +425,7 @@ class resnet3D(FLAGS):
         self.NETWORK_DEPTH         = 8
         self.WEIGHT_DECAY          = 1e-4
         self.SPARSE                = True
-        self.INPUT_DIMENSION       = '3D' 
+        self.INPUT_DIMENSION       = '3D'
 
         # self.BOTTLENECK_FC         = False
 
