@@ -65,8 +65,8 @@ class SparseResidualBlock(nn.Module):
 
         self.residual = scn.Identity()
 
-        if FLAGS.LEAKY_RELU: self.relu = scn.ReLU()
-        else:                self.relu = scn.LeakyReLU()
+        if FLAGS.LEAKY_RELU: self.relu = scn.LeakyReLU()
+        else:                self.relu = scn.ReLU()
 
         self.add = scn.AddTable()
 
@@ -113,8 +113,8 @@ class SparseConvolutionDownsample(nn.Module):
         if FLAGS.BATCH_NORM:
             self.bn   = scn.BatchNormalization(outplanes)
             
-        if FLAGS.LEAKY_RELU: self.relu = scn.ReLU()
-        else:                self.relu = scn.LeakyReLU()
+        if FLAGS.LEAKY_RELU: self.relu = scn.LeakyReLU()
+        else:                self.relu = scn.ReLU()
 
     def forward(self, x):
         out = self.conv(x)

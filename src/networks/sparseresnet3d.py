@@ -49,10 +49,7 @@ class SparseResidualBlock(nn.Module):
             filter_size = 3, 
             bias=False)
         
-        if FLAGS.LEAKY_RELU:
-            print ('FLAGS.LEAKY_RELU is true************************************************************')
         if FLAGS.BATCH_NORM:
-            print ('FLAGS.BATCH_NORM is true************************************************************')
             if FLAGS.LEAKY_RELU: self.bn1 = scn.BatchNormLeakyReLU(outplanes)
             else:                self.bn1 = scn.BatchNormReLU(outplanes)
 
@@ -67,8 +64,8 @@ class SparseResidualBlock(nn.Module):
 
         self.residual = scn.Identity()
         
-        if FLAGS.LEAKY_RELU: self.relu = scn.ReLU()
-        else:                self.relu = scn.LeakyReLU()
+        if FLAGS.LEAKY_RELU: self.relu = scn.LeakyReLU()
+        else:                self.relu = scn.ReLU()
 
         self.add = scn.AddTable()
 
@@ -115,8 +112,8 @@ class SparseConvolutionDownsample(nn.Module):
         if FLAGS.BATCH_NORM:
             self.bn   = scn.BatchNormalization(outplanes)
             
-        if FLAGS.LEAKY_RELU: self.relu = scn.ReLU()
-        else:                self.relu = scn.LeakyReLU()
+        if FLAGS.LEAKY_RELU: self.relu = scn.LeakyReLU()
+        else:                self.relu = scn.ReLU()
 
     def forward(self, x):
         out = self.conv(x)
