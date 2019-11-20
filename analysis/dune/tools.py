@@ -11,6 +11,28 @@ def pot_scale_factor(this_pot, target = 1e20):
 prop_cycle = plt.rcParams['axes.prop_cycle']
 colors = prop_cycle.by_key()['color']
 
+def lighten_color(color, amount=0.5):
+    """
+    Lightens the given color by multiplying (1-luminosity) by the given amount.
+    Input can be matplotlib color string, hex string, or RGB tuple.
+
+    Examples:
+    >> lighten_color('g', 0.3)
+    >> lighten_color('#F034A3', 0.6)
+    >> lighten_color((.3,.55,.1), 0.5)
+    """
+    import matplotlib.colors as mc
+    import colorsys
+    try:
+        c = mc.cnames[color]
+    except:
+        c = color
+    c = colorsys.rgb_to_hls(*mc.to_rgb(c))
+    return colorsys.hls_to_rgb(c[0], 1 - amount * (1 - c[1]), c[2])
+
+prop_cycle = plt.rcParams['axes.prop_cycle']
+colors = prop_cycle.by_key()['color']
+
 def efficiency(num, den, num_w=None, den_w=None, n_bins=10, limits=None, conf_level=None):
     '''
     Calculates the efficiency given two populations: one containig 
@@ -96,7 +118,7 @@ def efficiency(num, den, num_w=None, den_w=None, n_bins=10, limits=None, conf_le
     return eff, unc_low, unc_up, bins, bins_mid, x_bar
 
 
-def plot_histogram(ax, data, option='simple', weights=None, n_bins=10, limits=None, label=None):
+def plot_histogram(ax, data, option='simple', weights=None, n_bins=10, limits=None, label=None, hcolors=None):
     '''
     Plots a histogram given values.
     
@@ -108,6 +130,7 @@ def plot_histogram(ax, data, option='simple', weights=None, n_bins=10, limits=No
         n_bins {int} -- Optional, the number of bins
         limits {tuple} -- Optional, the lower and upper limits of the bins
         label {tuple} -- Optional, the labels
+        hcolors {tuple} -- Optional, the colors
         
     Options:
         simple -- With filled error bars
@@ -120,18 +143,24 @@ def plot_histogram(ax, data, option='simple', weights=None, n_bins=10, limits=No
 
     loopable_data_h = []
     loopable_err = []
+    total_events = 0
     if isinstance(data_h[0], list) or isinstance(data_h[0], np.ndarray):
         loopable_data_h = data_h
         loopable_err = err
+        for d in data_h: total_events += np.sum(d)
     else:
         loopable_data_h.append(data_h)
         loopable_err.append(err)
+        total_events = np.sum(data_h)
         
     if label is None:
         label = ['empty'] * len(data)
     else:
         if len(label) != len(data):
             raise ('Length of data and label has to be the same.')
+            
+    if hcolors is None:
+        hcolors = colors 
         
     lower = np.zeros(len(loopable_data_h[0]))
     
@@ -140,6 +169,7 @@ def plot_histogram(ax, data, option='simple', weights=None, n_bins=10, limits=No
     for d, e, l in zip(loopable_data_h, loopable_err, label):
         
         totals.append(np.sum(d))
+        n_events = np.sum(d)
                 
         d = np.append(d, d[-1])
         e = np.append(e, e[-1])
@@ -148,13 +178,13 @@ def plot_histogram(ax, data, option='simple', weights=None, n_bins=10, limits=No
             ax.step(
                 bins,
                 d,
-#             color="C" + str(i),
+                color=hcolors[len(totals)-1],
                 where="post",
                 label=l,
             )
             ax.fill_between(
                 bins, d - e, d + e, alpha=0.3, step="post", 
-#             color="C" + str(i)
+                color=hcolors[len(totals)-1]
             )
     
     
@@ -164,7 +194,8 @@ def plot_histogram(ax, data, option='simple', weights=None, n_bins=10, limits=No
                     lw=2,
                     width=widths,
                     bottom=lower,
-                    label=l)
+                    label=l+', {0:0.1f}%'.format(n_events / total_events * 100),
+                    color=hcolors[len(totals)-1])
             lower += d[:-1]
         else:
             raise('Option' + option + 'not recognized.')
