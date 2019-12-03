@@ -218,6 +218,7 @@ def plot_histogram(ax, data, option='simple', weights=None, n_bins=10, limits=No
         data_tot, err_tot, _, _ = histogram_helper(d, w, n_bins, limits)
         
         # Plot the histogram as a hashed histogram
+        l = 'Stat. Unc.'
         for m, v, e, w in zip(bins_mid, data_tot, err_tot, widths):
             ax.add_patch(
                     patches.Rectangle(
@@ -228,8 +229,10 @@ def plot_histogram(ax, data, option='simple', weights=None, n_bins=10, limits=No
                     Fill=False,
                     linewidth=0,
                     alpha=0.4,
+                    label=l
                 )
             )
+            l = None
     return totals
     
     
