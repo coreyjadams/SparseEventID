@@ -33,7 +33,7 @@ class trainercore(object):
         if not FLAGS.TRAINING:
             self._larcv_interface = queueloader.queue_interface(random_access_mode="serial_access")
         else:
-            self._larcv_interface = queueloader.queue_interface()
+            self._larcv_interface = queueloader.queue_interface(random_access_mode="random_blocks")
         # self._larcv_interface = threadloader.thread_interface()
         self._iteration       = 0
         self._global_step     = -1
@@ -89,11 +89,21 @@ class trainercore(object):
                 if key != 'image':
                     FLAGS.KEYWORD_LABEL.append(key)
 
-        self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys, color)
-        # self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys)
+
+        if FLAGS.DISTRIBUTED:
+            self._larcv_interface.prepare_manager(mode='primary', 
+                                                  io_config=io_config, 
+                                                  minibatch_size=FLAGS.MINIBATCH_SIZE, 
+                                                  data_keys=data_keys, 
+                                                  files=FLAGS.FILE,
+                                                  random_access_mode="random_blocks",
+                                                  read_option="read_from_single_local_rank")
+        else:
+            self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys, files=FLAGS.FILE)
+
 
         if not FLAGS.TRAINING:
-            self._larcv_interface.set_next_index('primary', 0)
+            self._larcv_interface.set_next_index('primary', FLAGS.START_INDEX)
 
         # All of the additional tools are in case there is a test set up:
         if FLAGS.AUX_FILE is not None:
@@ -127,8 +137,16 @@ class trainercore(object):
                         data_keys[proc._name] = proc._name
 
 
-
-                self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys, color)
+                if FLAGS.DISTRIBUTED:
+                    self._larcv_interface.prepare_manager(mode='aux', 
+                                                          io_config=io_config, 
+                                                          minibatch_size=FLAGS.AUX_MINIBATCH_SIZE, 
+                                                          data_keys=data_keys, 
+                                                          files=FLAGS.AUX_FILE,
+                                                          random_access_mode="serial_access",
+                                                          read_option="read_from_all_ranks_mpi")
+                else:
+                    self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys, files=FLAGS.AUX_FILE)
 
         if FLAGS.OUTPUT_FILE is not None:
             if not FLAGS.TRAINING:
@@ -141,7 +159,7 @@ class trainercore(object):
                 out_file.close()
                 self._cleanup.append(out_file)
 
-                self._larcv_interface.prepare_writer(out_file.name, FLAGS.OUTPUT_FILE)
+                self._larcv_interface.prepare_writer(io_config=out_file.name, input_files=FLAGS.FILE, output_file=FLAGS.OUTPUT_FILE)
 
 
 
@@ -357,7 +375,7 @@ class trainercore(object):
         # Parse the checkpoint file to see what the last checkpoints were:
 
         # Keep only the last 5 checkpoints
-        n_keep = 5
+        n_keep = 100
 
 
         past_checkpoint_files = {}
@@ -561,10 +579,10 @@ class trainercore(object):
     def fetch_next_batch(self, mode='primary', metadata=False):
 
         # For the serial mode, call next here:
+        self._larcv_interface.prepare_next(mode)
 
         minibatch_data = self._larcv_interface.fetch_minibatch_data(mode, pop=True, fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(mode)
-        self._larcv_interface.prepare_next(mode)
 
         for key in minibatch_data:
             if key == 'entries' or key == 'event_ids':
@@ -757,13 +775,12 @@ class trainercore(object):
                 # (Make sure to pull from the validation set)
                 minibatch_data = self.fetch_next_batch('aux')
 
-
                 # Convert the input data to torch tensors
                 minibatch_data = self.to_torch(minibatch_data)
 
                 # Run a forward pass of the model on the input image:
                 logits = self._net(minibatch_data['image'])
-
+                
                 # # Here, we have to map the logit keys to aux keys
                 # for key in logits.keys():
                 #     new_key = 'aux_' + key
@@ -785,18 +802,13 @@ class trainercore(object):
 
     def ana_step(self, iteration=None):
 
-        # First, validation only occurs on training:
         if FLAGS.TRAINING: return
-
-        # perform a validation step
 
         # Set network to eval mode
         self._net.eval()
-        # self._net.train()
 
         # Fetch the next batch of data with larcv
         minibatch_data = self.fetch_next_batch(metadata=True)
-
 
         # Convert the input data to torch tensors
         minibatch_data = self.to_torch(minibatch_data)
@@ -804,17 +816,11 @@ class trainercore(object):
         # Run a forward pass of the model on the input image:
         with torch.no_grad():
             logits = self._net(minibatch_data['image'])
-
+        
         if FLAGS.LABEL_MODE == 'all':
             softmax = torch.nn.Softmax(dim=-1)(logits)
         else:
             softmax = { key : torch.nn.Softmax(dim=-1)(logits[key]) for key in logits }
-
-        # print('label_neut', minibatch_data['label_neut'])
-        # print('label_npi', minibatch_data['label_npi'])
-        # print('label_cpi', minibatch_data['label_cpi'])
-        # print('label_prot', minibatch_data['label_prot'])
-        # print(softmax)
 
         # Call the larcv interface to write data:
         if FLAGS.OUTPUT_FILE is not None:
@@ -823,11 +829,17 @@ class trainercore(object):
                 self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer='all',
                     entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
             else:
-                for key in softmax:
-                    writable_logits = numpy.asarray(softmax[key].cpu())
-                    self._larcv_interface.write_output(data=writable_logits[0], datatype='tensor1d', producer=key,
-                        entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
-
+                for entry in range(FLAGS.MINIBATCH_SIZE):
+                    if iteration > 1 and minibatch_data['entries'][entry] == 0:
+                        print ('Reached max number of entries.')
+                        break
+                    this_entry = [minibatch_data['entries'][entry]]
+                    this_event_id = [minibatch_data['event_ids'][entry]]
+                    for key in softmax:
+                        writable_logits = numpy.asarray(softmax[key].cpu())[entry]
+                        self._larcv_interface.write_output(data=writable_logits, datatype='tensor1d', producer=key,
+                            entries=this_entry, event_ids=this_event_id)
+                   
         # If the input data has labels available, compute the metrics:
         if (FLAGS.LABEL_MODE == 'all' and 'label' in minibatch_data) or \
            (FLAGS.LABEL_MODE == 'split' and 'label_neut' in minibatch_data):
@@ -870,8 +882,9 @@ class trainercore(object):
 
         # If we're not training, force the number of iterations to the epoch size or less
         if not FLAGS.TRAINING:
-            if FLAGS.ITERATIONS > self._epoch_size:
-                FLAGS.ITERATIONS = self._epoch_size
+            if FLAGS.ITERATIONS > int(self._epoch_size/FLAGS.MINIBATCH_SIZE) + 1:
+                FLAGS.ITERATIONS = int(self._epoch_size/FLAGS.MINIBATCH_SIZE) + 1
+                print('Number of iterations set to', FLAGS.ITERATIONS)
 
 
         # Run iterations

@@ -90,8 +90,12 @@ def output_io(input_file, output_file):
     # With the, 25 output events is 119K and takes 36s
     # config.set_param("ReadOnlyType", "[\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"cluster2d\",\"cluster2d\",\"cluster3d\",\"cluster3d\"]")  
     # config.set_param("ReadOnlyName", "[\"neutrino\",\"cpiID\",\"neutID\",\"npiID\",\"protID\",\"all\",\"duneseg\",\"duneseg\",\"segment\",\"duneseg\",\"segment\"]")  
+
     config.set_param("ReadOnlyType", "[\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"cluster2d\"]")  
     config.set_param("ReadOnlyName", "[\"neutrino\",\"cpiID\",\"neutID\",\"npiID\",\"protID\",\"all\",\"segment\",\"duneseg\"]")  
+    
+    # config.set_param("ReadOnlyType", "[\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\",\"particle\"]")  
+    # config.set_param("ReadOnlyName", "[\"neutrino\",\"cpiID\",\"neutID\",\"npiID\",\"protID\",\"all\",\"segment\"]")  
 
     return config
 
@@ -120,7 +124,7 @@ def gen_sparse3d_data_filler(name, producer, max_voxels):
     proc.set_param("IncludeValues",     "true")
     proc.set_param("MaxVoxels",         max_voxels)
     proc.set_param("UnfilledVoxelValue","-999")
-    proc.set_param("Augment",           "false")
+    proc.set_param("Augment",           "true")
 
     return proc
 
