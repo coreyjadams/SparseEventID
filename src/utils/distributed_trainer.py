@@ -110,18 +110,33 @@ def triangle_clr(step):
 
     return (min_lr[FLAGS.IMAGE_TYPE] + diff * max(0, func)) / FLAGS.LEARNING_RATE
 
-# def triangle_clr(step):
+def exp_range_clr(step, 
+                  step_size = 100,
+                  min_lr=min_lr[FLAGS.IMAGE_TYPE], 
+                  max_lr=max_lr[FLAGS.IMAGE_TYPE], 
+                  mode='exp_range', 
+                  gamma=0.999):
+    '''
+    Implements the cyclical lr with exp decrease 
+    learning rate schedule
+    '''
+    scale_func = 1
+    if mode == 'exp_range':
+        scale_func = gamma**step 
 
-#     epoch_steps  = (1e5 / FLAGS.MINIBATCH_SIZE)
-#     cycle_epochs = 4
+    max_lr *= scale_func
 
-#     n_cycles_init = 4
-#     n_cycles_2    = 2
-#     n_cycles_3    = 2
+    if max_lr <= min_lr:
+        max_lr = min_lr
 
-#     # Which cycle are we in?
+    step_size = 100
+    cycle = math.floor(1 + step / (2 * step_size))
+    func = 1 - abs(step / step_size - 2 * cycle + 1)
+    diff = max_lr - min_lr
 
-#     cycle = step % (cycle_epochs*epoch_steps)
+    return (min_lr + diff * max(0, func)) / FLAGS.LEARNING_RATE
+
+
 
 def exp_increase_lr(step):
   '''
@@ -154,7 +169,7 @@ class distributed_trainer(trainercore):
             os.environ['CUDA_VISIBLE_DEVICES'] = str(hvd.local_rank())
             
 
-        self._larcv_interface = queue_interface()
+        self._larcv_interface = queue_interface()#read_option='read_from_single_local_rank')
         self._iteration       = 0
         self._rank            = hvd.rank()
         self._cleanup         = []
@@ -189,9 +204,9 @@ class distributed_trainer(trainercore):
         elif FLAGS.LR_SCHEDULE == 'triangle_clr':
             self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self._opt, triangle_clr, last_epoch=-1)
-            #self._lr_scheduler = torch.optim.lr_scheduler.CyclicLR(
-            #    self._opt, base_lr=min_lr[FLAGS.IMAGE_TYPE], max_lr=max_lr[FLAGS.IMAGE_TYPE], 
-            #    step_size_up=100, cycle_momentum=False, last_epoch=-1)
+        elif FLAGS.LR_SCHEDULE == 'exp_range_clr':
+            self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
+                self._opt, exp_range_clr, last_epoch=-1)
         elif FLAGS.LR_SCHEDULE == 'decay':
             self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self._opt, decay_after_epoch, last_epoch=-1)

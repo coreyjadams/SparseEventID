@@ -94,6 +94,7 @@ class FLAGS(Borg):
         self.FILE                  = "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/train_event_id.root"
         self.IO_VERBOSITY          = 3
         self.KEYWORD_DATA          = 'data'
+        self.START_INDEX           = 0
         # For this classification task, the label can be split or all-in-one
         self.LABEL_MODE            = 'split' # could also be 'all'
 
@@ -134,6 +135,8 @@ class FLAGS(Borg):
             help="IO Configuration File [default: {}]".format(self.FILE))
         parser.add_argument('--io-verbosity', type=int, default=self.IO_VERBOSITY,
             help="IO verbosity [default: {}]".format(self.IO_VERBOSITY))
+        parser.add_argument('--start-index', type=int, default=self.START_INDEX,
+            help="Start index, only in inference mode [default: {}]".format(self.START_INDEX))
         # parser.add_argument('--keyword-data', type=str, default=self.KEYWORD_DATA,
             # help="Keyword for io data access [default: {}]".format(self.KEYWORD_DATA))
         # parser.add_argument('--keyword-label', type=str, default=self.KEYWORD_LABEL,
@@ -191,7 +194,7 @@ class FLAGS(Borg):
         self.train_parser.add_argument('-ci','--checkpoint-iteration', type=int, default=self.CHECKPOINT_ITERATION,
                                   help='Period (in steps) to store snapshot of weights [default: {}]'.format(self.CHECKPOINT_ITERATION))
 
-        self.train_parser.add_argument('--lr-schedule', type=str, choices=['flat', '1cycle', 'triangle_clr', 'decay', 'expincrease'], default=self.LR_SCHEDULE,
+        self.train_parser.add_argument('--lr-schedule', type=str, choices=['flat', '1cycle', 'triangle_clr', 'exp_range_clr', 'decay', 'expincrease'], default=self.LR_SCHEDULE,
                                   help='Apply a learning rate schedule [default: {}]'.format(self.LR_SCHEDULE))
         self.train_parser.add_argument('--optimizer', type=str, choices=['Adam', 'SGD'], default=self.OPTIMIZER,
                                   help='Optimizer to use [default: {}]'.format(self.OPTIMIZER))
