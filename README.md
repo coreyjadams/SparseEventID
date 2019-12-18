@@ -4,11 +4,6 @@ This repository contains a set of models that work on sparse data in pytorch. Th
 
 In general, all models share the same tools for IO, distributed training, saving and restoring, and doing evaluations of test, train, and inference steps.
 
-The models included here are (initially):
-
-### PointNet
-
-Implementation of PointNet for event identification in neutrino events in  lartpcs.  Implementation is available for both 2D and 3D networks.
 
 
 ### Submanifold sparse convolution ResNet
@@ -18,17 +13,12 @@ Implementation of a standard resnet architecture with submanifold sparse convolu
 (Coming eventually)
 ### Dynamic Graph Convolutional Neural Network
 
+### Point Net
+
 # Dependencies
- - The IO model is based on larcv, so you need larcv data files to run this.  
+ - The IO model is based on larcv3, so you need larcv3 data files to run this.  An open dataset is availalbe: https://osf.io/kbn5a/
  - The sparse convolution requires the submanifold sparse convolution functions, from facebook.
+   - In turn, this has a dependency on sparsehash.
  - Pytorch is the neural network framework
  - To run in a distrubuted way, horovod and mpi4py are required. 
 
-# Running
-
-Run 
-```
-bin/pointnet.py train [options]
-```
-
-to execute the point net algorithm.  Similarly, you can run pointnet_seg, dgcnn, dgcnn_seg.
