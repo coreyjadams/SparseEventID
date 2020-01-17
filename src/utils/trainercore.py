@@ -145,21 +145,12 @@ class trainercore(object):
                         data_keys[proc._name] = proc._name
 
 
-<<<<<<< HEAD
-                if FLAGS.DISTRIBUTED:
-                    self._larcv_interface.prepare_manager(mode='aux',
-                                                          io_config=io_config,
-                                                          minibatch_size=FLAGS.AUX_MINIBATCH_SIZE,
-                                                          data_keys=data_keys,
-                                                          files=FLAGS.AUX_FILE,
-=======
                 if self.args.distributed:
                     self._larcv_interface.prepare_manager(mode='aux',
                                                           io_config=io_config,
                                                           minibatch_size=self.args.aux_minibatch_size,
                                                           data_keys=data_keys,
-                                                          files=self.args.aux_file,
->>>>>>> d859251a0e1dcd9963f054a4ecf04eec9be71321
+                                                          # files=self.args.aux_file,
                                                           random_access_mode="serial_access",
                                                           read_option="read_from_all_ranks_mpi")
                 else:
