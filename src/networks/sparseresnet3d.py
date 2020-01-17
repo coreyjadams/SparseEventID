@@ -43,7 +43,7 @@ class ResNetFlags(network_config):
         this_parser.add_argument("--leaky-relu",
             help    = "Run using leaky relu",
             type    = str2bool,
-            default = False)        
+            default = False)
 
 
 class SparseBlock(nn.Module):
@@ -51,14 +51,14 @@ class SparseBlock(nn.Module):
     def __init__(self, inplanes, outplanes, batch_norm, leaky_relu):
 
         nn.Module.__init__(self)
-        
+
         self.batch_norm = batch_norm
         self.leaky_relu = leaky_relu
 
-        self.conv1 = scn.SubmanifoldConvolution(dimension=3, 
-            nIn=inplanes, 
-            nOut=outplanes, 
-            filter_size=3, 
+        self.conv1 = scn.SubmanifoldConvolution(dimension=3,
+            nIn=inplanes,
+            nOut=outplanes,
+            filter_size=3,
             bias=False)
 
         if self.batch_norm:
@@ -84,21 +84,21 @@ class SparseResidualBlock(nn.Module):
 
     def __init__(self, inplanes, outplanes, batch_norm, leaky_relu):
         nn.Module.__init__(self)
-        
+
         self.batch_norm = batch_norm
         self.leaky_relu = leaky_relu
-        
-        self.conv1 = scn.SubmanifoldConvolution(dimension=3, 
-            nIn         = inplanes, 
-            nOut        = outplanes, 
-            filter_size = 3, 
+
+        self.conv1 = scn.SubmanifoldConvolution(dimension=3,
+            nIn         = inplanes,
+            nOut        = outplanes,
+            filter_size = 3,
             bias=False)
-        
+
         if self.batch_norm:
             if self.leaky_relu: self.bn1 = scn.BatchNormLeakyReLU(outplanes)
             else:                self.bn1 = scn.BatchNormReLU(outplanes)
 
-        self.conv2 = scn.SubmanifoldConvolution(dimension=3, 
+        self.conv2 = scn.SubmanifoldConvolution(dimension=3,
             nIn         = outplanes,
             nOut        = outplanes,
             filter_size = 3,
@@ -108,7 +108,7 @@ class SparseResidualBlock(nn.Module):
             self.bn2 = scn.BatchNormalization(outplanes)
 
         self.residual = scn.Identity()
-        
+
         if self.leaky_relu: self.relu = scn.LeakyReLU()
         else:                self.relu = scn.ReLU()
 
@@ -148,7 +148,7 @@ class SparseConvolutionDownsample(nn.Module):
 
         self.batch_norm = batch_norm
         self.leaky_relu = leaky_relu
-        
+
         self.conv = scn.Convolution(dimension=3,
             nIn             = inplanes,
             nOut            = outplanes,
@@ -159,7 +159,7 @@ class SparseConvolutionDownsample(nn.Module):
 
         if self.batch_norm:
             self.bn   = scn.BatchNormalization(outplanes)
-            
+
         if self.leaky_relu: self.relu = scn.LeakyReLU()
         else:                self.relu = scn.ReLU()
 
@@ -179,10 +179,10 @@ class SparseBlockSeries(torch.nn.Module):
 
     def __init__(self, inplanes, n_blocks, batch_norm, leaky_relu, residual=False):
         torch.nn.Module.__init__(self)
-        
+
         self.batch_norm = batch_norm
         self.leaky_relu = leaky_relu
-        
+
         if residual:
             self.blocks = [ SparseResidualBlock(inplanes, inplanes, batch_norm, leaky_relu,) for i in range(n_blocks) ]
         else:
@@ -218,9 +218,9 @@ class FullyConnectedSeries(torch.nn.Module):
         return x
 
 
-def filter_increase(input_filters, inital_filters):
+def filter_increase(input_filters, initial_filters):
     # return input_filters * 2
-    return input_filters + inital_filters
+    return input_filters + initial_filters
 
 class ResNet(torch.nn.Module):
 
@@ -241,13 +241,13 @@ class ResNet(torch.nn.Module):
         # Here, define the layers we will need in the forward path:
 
 
-        
+
         # The convolutional layers, which can be shared or not across planes,
         # are defined below
 
-        # We apply an initial convolution, to each plane, to get n_inital_filters
+        # We apply an initial convolution, to each plane, to get n_initial_filters
 
-        self.initial_convolution = scn.SubmanifoldConvolution(3, 1, 
+        self.initial_convolution = scn.SubmanifoldConvolution(3, 1,
             args.n_initial_filters, filter_size=5, bias=False)
 
         n_filters = args.n_initial_filters
@@ -260,12 +260,16 @@ class ResNet(torch.nn.Module):
         for layer in range(args.network_depth):
 
             self.convolutional_layers.append(SparseBlockSeries(
-                n_filters, 
+                n_filters,
                 args.res_blocks_per_layer,
+                batch_norm = args.batch_norm,
+                leaky_relu = args.leaky_relu,
                 residual = True))
-            out_filters = filter_increase(n_filters)
+            out_filters = filter_increase(n_filters, args.n_initial_filters)
             self.convolutional_layers.append(SparseConvolutionDownsample(
                 inplanes = n_filters,
+                batch_norm = args.batch_norm,
+                leaky_relu = args.leaky_relu,
                 outplanes = out_filters))
                 # outplanes = n_filters + args.n_initial_filters))
             n_filters = out_filters
@@ -278,35 +282,39 @@ class ResNet(torch.nn.Module):
         self.label_mode = args.label_mode
         if args.label_mode == 'all':
             self.final_layer = SparseBlockSeries(
-                        inplanes = n_filters, 
+                        inplanes = n_filters,
                         n_blocks = args.res_blocks_per_layer,
+                        batch_norm = args.batch_norm,
+                        leaky_relu = args.leaky_relu,
                         residual = True)
-                    
-            # self.bottleneck  = scn.SubmanifoldConvolution(dimension=3, 
-            #             nIn=n_filters, 
-            #             nOut=output_shape[key][-1], 
-            #             filter_size=3, 
+
+            # self.bottleneck  = scn.SubmanifoldConvolution(dimension=3,
+            #             nIn=n_filters,
+            #             nOut=output_shape[key][-1],
+            #             filter_size=3,
             #             bias=False)
 
             self.sparse_to_dense = scn.SparseToDense(dimension=3, nPlanes=output_shape[-1])
 
         else:
 
-            self.final_layer = { 
+            self.final_layer = {
                     key : SparseBlockSeries(
-                        inplanes = n_filters, 
+                        inplanes = n_filters,
                         n_blocks = args.res_blocks_per_layer,
+                        batch_norm = args.batch_norm,
+                        leaky_relu = args.leaky_relu,
                         residual = True)
                     for key in output_shape
                 }
 
             # if not args.bottleneck_fc:
 
-            self.bottleneck  = { 
-                    key : scn.SubmanifoldConvolution(dimension=3, 
-                        nIn=n_filters, 
-                        nOut=output_shape[key][-1], 
-                        filter_size=1, 
+            self.bottleneck  = {
+                    key : scn.SubmanifoldConvolution(dimension=3,
+                        nIn=n_filters,
+                        nOut=output_shape[key][-1],
+                        filter_size=1,
                     bias=False)
                     for key in output_shape
                 }
@@ -318,11 +326,11 @@ class ResNet(torch.nn.Module):
 
             # else:
 
-            #     self.bottleneck  = { 
-            #             key : scn.SubmanifoldConvolution(dimension=3, 
-            #                 nIn=n_filters, 
-            #                 nOut=8, 
-            #                 filter_size=1, 
+            #     self.bottleneck  = {
+            #             key : scn.SubmanifoldConvolution(dimension=3,
+            #                 nIn=n_filters,
+            #                 nOut=8,
+            #                 filter_size=1,
             #                 bias=False)
             #             for key in output_shape
             #         }
@@ -363,13 +371,10 @@ class ResNet(torch.nn.Module):
 
 
     def forward(self, x):
-        
+
         batch_size = x[2]
 
-        FLAGS = utils.flags.FLAGS()
-
-
-        x = self.input_tensor(x) 
+        x = self.input_tensor(x)
 
         x = self.initial_convolution(x)
 
@@ -391,7 +396,7 @@ class ResNet(torch.nn.Module):
 
             output = self.sparse_to_dense(output)
 
-            # Apply global average pooling 
+            # Apply global average pooling
             kernel_size = output.shape[2:]
             output = torch.squeeze(nn.AvgPool3d(kernel_size, ceil_mode=False)(output))
             output = output.view([batch_size, output.shape[-1]])
@@ -406,7 +411,7 @@ class ResNet(torch.nn.Module):
                 # print(key, " 1 shape: ", output[key].shape)
 
                 # Apply the bottle neck to make the right number of output filters:
-                
+
                 output[key] = self.bottleneck[key](output[key])
 
 
@@ -416,15 +421,12 @@ class ResNet(torch.nn.Module):
                 #     # Flatten
                 #     output[key] = output[key].reshape(output[key].size(0), -1)
                 #     # Fully connected layers
-                #     output[key] = self.fully_connected[key](output[key])                
+                #     output[key] = self.fully_connected[key](output[key])
                 # else:
-                # Apply global average pooling 
+                # Apply global average pooling
                 kernel_size = output[key].shape[2:]
                 output[key] = torch.squeeze(nn.AvgPool3d(kernel_size, ceil_mode=False)(output[key]))
                 output[key] = output[key].view([batch_size, output[key].shape[-1]])
 
 
         return output
-
-
-

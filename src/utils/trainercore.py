@@ -191,7 +191,7 @@ class trainercore(object):
             from src.networks import sparseresnet
             self._net = sparseresnet.ResNet(output_shape, self.args)
         elif self.args.network == "sparseresnet3d":
-            from src.networks import sparseresnet
+            from src.networks import sparseresnet3d
             self._net = sparseresnet3d.ResNet(output_shape, self.args)
         else:
             raise Exception(f"Couldn't identify network {self.args.network}")
