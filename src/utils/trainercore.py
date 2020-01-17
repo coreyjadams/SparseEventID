@@ -832,13 +832,9 @@ class trainercore(object):
         # Run a forward pass of the model on the input image:
         with torch.no_grad():
             logits = self._net(minibatch_data['image'])
-<<<<<<< HEAD
 
-        if FLAGS.LABEL_MODE == 'all':
-=======
 
         if self.args.label_mode == 'all':
->>>>>>> d859251a0e1dcd9963f054a4ecf04eec9be71321
             softmax = torch.nn.Softmax(dim=-1)(logits)
         else:
             softmax = { key : torch.nn.Softmax(dim=-1)(logits[key]) for key in logits }
