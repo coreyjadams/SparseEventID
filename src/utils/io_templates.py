@@ -5,7 +5,7 @@ from . import larcv_io
 # Here, we set up a bunch of template IO formats in the form of callable functions:
 
 def train_io(input_file, image_dim, label_mode, prepend_names=""):
-    if image_dim == "2D":
+    if image_dim == 2:
         max_voxels = 20000
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
     else:
@@ -27,7 +27,7 @@ def train_io(input_file, image_dim, label_mode, prepend_names=""):
 
 
 def test_io(input_file, image_dim, label_mode, prepend_names="aux_"):
-    if image_dim == "2D":
+    if image_dim == 2:
         max_voxels = 20000
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
     else:
@@ -49,7 +49,7 @@ def test_io(input_file, image_dim, label_mode, prepend_names="aux_"):
 
 
 def ana_io(input_file, image_dim, label_mode, prepend_names=""):
-    if image_dim == "2D":
+    if image_dim == 2:
         max_voxels = 20000
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
     else:

@@ -14,10 +14,6 @@ hvd.init()
 from larcv.distributed_queue_interface import queue_interface
 
 
-from . import flags
-# from . import data_transforms
-FLAGS = flags.FLAGS()
-
 from .trainercore import trainercore
 
 import tensorboardX
@@ -32,7 +28,7 @@ def constant_lr(step):
     return 1.0
 
 def decay_after_epoch(step):
-    if step > FLAGS.ITERATIONS*cycle_len:
+    if step > self.args.iterations*cycle_len:
         return 0.1
     else:
         return 1.0
@@ -44,9 +40,9 @@ def lr_increase(step):
 
     # For this problem, the dataset size is 1e5.
     # So the epoch can be calculated easily:
-    # epoch = (step * FLAGS.MINIBATCH_SIZE) / (1e5)
+    # epoch = (step * self.args.MINIBATCH_SIZE) / (1e5)
 
-    base_lr   = FLAGS.LEARNING_RATE
+    base_lr   = self.args.learning_rate
     step_size = 5.0
 
     return 1.0 + step*step_size
@@ -66,10 +62,10 @@ def lr_increase(step):
 
 def one_cycle_clr(step):
     
-    peak = peak_lr / FLAGS.LEARNING_RATE
+    peak = peak_lr / self.args.learning_rate
     
-    cycle_steps  = int(FLAGS.ITERATIONS*cycle_len)
-    end_steps = FLAGS.ITERATIONS - cycle_steps
+    cycle_steps  = int(self.args.iterations*cycle_len)
+    end_steps = self.args.iterations - cycle_steps
     # Which cycle are we in?
 
     cycle = int(step / cycle_steps)
@@ -106,14 +102,14 @@ def triangle_clr(step):
     step_size = 100
     cycle = math.floor(1 + step / (2 * step_size))
     func = 1 - abs(step / step_size - 2 * cycle + 1)
-    diff = max_lr[FLAGS.IMAGE_TYPE] - min_lr[FLAGS.IMAGE_TYPE]
+    diff = max_lr[self.args.image_type] - min_lr[self.args.image_type]
 
-    return (min_lr[FLAGS.IMAGE_TYPE] + diff * max(0, func)) / FLAGS.LEARNING_RATE
+    return (min_lr[self.args.image_type] + diff * max(0, func)) / self.args.learning_rate
 
 def exp_range_clr(step, 
                   step_size = 100,
-                  min_lr=min_lr[FLAGS.IMAGE_TYPE], 
-                  max_lr=max_lr[FLAGS.IMAGE_TYPE], 
+                  min_lr=min_lr[self.args.image_type], 
+                  max_lr=max_lr[self.args.image_type], 
                   mode='exp_range', 
                   gamma=0.999):
     '''
@@ -134,7 +130,7 @@ def exp_range_clr(step,
     func = 1 - abs(step / step_size - 2 * cycle + 1)
     diff = max_lr - min_lr
 
-    return (min_lr + diff * max(0, func)) / FLAGS.LEARNING_RATE
+    return (min_lr + diff * max(0, func)) / self.args.learning_rate
 
 
 
@@ -146,10 +142,10 @@ def exp_increase_lr(step):
   to vary the learning rate.
   '''
 
-  start_lr = FLAGS.LEARNING_RATE  # 1.e-7
-  end_lr = FLAGS.LEARNING_RATE * 1.e8
+  start_lr = self.args.learning_rate  # 1.e-7
+  end_lr = self.args.learning_rate * 1.e8
 
-  return math.exp(step * math.log(end_lr / start_lr) / FLAGS.ITERATIONS)
+  return math.exp(step * math.log(end_lr / start_lr) / self.args.iterations)
 
 class distributed_trainer(trainercore):
     '''
@@ -165,7 +161,7 @@ class distributed_trainer(trainercore):
         # Put the IO rank as the last rank in the COMM, since rank 0 does tf saves
         root_rank = hvd.size() - 1 
 
-        if FLAGS.COMPUTE_MODE == "GPU":
+        if self.args.COMPUTE_MODE == "GPU":
             os.environ['CUDA_VISIBLE_DEVICES'] = str(hvd.local_rank())
             
 
@@ -176,8 +172,8 @@ class distributed_trainer(trainercore):
         self._global_step     = torch.as_tensor(-1)
 
         if self._rank == 0:
-            FLAGS.dump_config()
-        # Make sure that 'LEARNING_RATE' and 'TRAINING'
+            self.args.dump_config()
+        # Make sure that 'learning_rate' and 'TRAINING'
         # are in net network parameters:
 
 
@@ -198,19 +194,19 @@ class distributed_trainer(trainercore):
 
         trainercore.init_optimizer(self)
 
-        if FLAGS.LR_SCHEDULE == '1cycle':
+        if self.args.lr_schedule == '1cycle':
             self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self._opt, one_cycle_clr, last_epoch=-1)
-        elif FLAGS.LR_SCHEDULE == 'triangle_clr':
+        elif self.args.lr_schedule == 'triangle_clr':
             self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self._opt, triangle_clr, last_epoch=-1)
-        elif FLAGS.LR_SCHEDULE == 'exp_range_clr':
+        elif self.args.lr_schedule == 'exp_range_clr':
             self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self._opt, exp_range_clr, last_epoch=-1)
-        elif FLAGS.LR_SCHEDULE == 'decay':
+        elif self.args.lr_schedule == 'decay':
             self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self._opt, decay_after_epoch, last_epoch=-1)
-        elif FLAGS.LR_SCHEDULE == 'expincrease':
+        elif self.args.lr_schedule == 'expincrease':
             self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
                 self._opt, exp_increase_lr, last_epoch=-1)
         else:
@@ -257,16 +253,16 @@ class distributed_trainer(trainercore):
         # print("Rank {}".format(hvd.rank()) + " Recieved Dimensions")
 
         # This sets up the necessary output shape:
-        if FLAGS.LABEL_MODE == 'split':
-            output_shape = { key : dims[key] for key in FLAGS.KEYWORD_LABEL}
+        if self.args.label_mode == 'split':
+            output_shape = { key : dims[key] for key in self.args.keyword_label}
         else:
-            output_shape = dims[FLAGS.KEYWORD_LABEL]
+            output_shape = dims[self.args.keyword_label]
 
-        self._net = FLAGS._net(output_shape)
+        self._net = self.args._net(output_shape)
         # print("Rank {}".format(hvd.rank()) + " Built network")
 
 
-        if FLAGS.TRAINING: 
+        if self.args.training: 
             self._net.train(True)
 
 
@@ -303,9 +299,9 @@ class distributed_trainer(trainercore):
         print("Rank {}".format(hvd.rank()) + " Parameters broadcasted")
 
 
-        if FLAGS.COMPUTE_MODE == "CPU":
+        if self.args.compute_mode == "CPU":
             pass
-        if FLAGS.COMPUTE_MODE == "GPU":
+        if self.args.compute_mode == "GPU":
             self._net.cuda()
             # This moves the optimizer to the GPU:
             for state in self._opt.state.values():
@@ -316,11 +312,11 @@ class distributed_trainer(trainercore):
 
         print("Rank ", hvd.rank(), next(self._net.parameters()).device)
 
-        if FLAGS.LABEL_MODE == 'all':
+        if self.args.label_mode == 'all':
             self._log_keys = ['loss', 'accuracy']
-        elif FLAGS.LABEL_MODE == 'split':
+        elif self.args.label_mode == 'split':
             self._log_keys = ['loss']
-            for key in FLAGS.KEYWORD_LABEL: 
+            for key in self.args.keyword_label: 
                 self._log_keys.append('acc/{}'.format(key))
 
 
@@ -351,17 +347,6 @@ class distributed_trainer(trainercore):
         self._lr_scheduler.step()
         # pass
 
-
-    # def get_device(self):
-    #             # Convert the input data to torch tensors
-    #     if FLAGS.COMPUTE_MODE == "GPU":
-    #         device = torch.device('cuda:{}'.format(hvd.local_rank()))
-    #         # print(device)
-    #     else:
-    #         device = torch.device('cpu')
-
-
-    #     return device
 
 
     def to_torch(self, minibatch_data):

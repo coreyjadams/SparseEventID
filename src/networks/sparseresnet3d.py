@@ -6,6 +6,67 @@ from src import utils
 
 FLAGS = utils.flags.FLAGS()
 
+# class resnet3D(FLAGS):
+#     ''' Sparse Resnet specific flags
+#     '''
+
+#     def __init__(self):
+#         FLAGS.__init__(self)
+
+
+#     def set_net(self, net):
+#         # For the resnet object, we set the network as resnet:
+#         self._net = net
+
+
+#     def _set_defaults(self):
+
+#         self.VERBOSITY             = 0
+#         self.N_INITIAL_FILTERS     = 32
+#         self.RES_BLOCKS_PER_LAYER  = 2
+#         self.NETWORK_DEPTH         = 8
+#         self.WEIGHT_DECAY          = 1e-4
+#         self.SPARSE                = True
+#         self.INPUT_DIMENSION       = '3D'
+
+#         self.BATCH_NORM                 = True
+#         self.LEAKY_RELU                 = False   
+
+#         # self.BOTTLENECK_FC         = False
+
+#         FLAGS._set_defaults(self)
+
+#     def _add_default_network_configuration(self, parser):
+
+#         parser.add_argument('-v', '--verbosity', type=int,default=self.VERBOSITY,
+#             help="Network verbosity at construction [default: {}]".format(self.VERBOSITY))
+
+
+#         parser.add_argument('--n-initial-filters', type=int, default=self.N_INITIAL_FILTERS,
+#             help="Number of filters applied, per plane, for the initial convolution [default: {}]".format(self.N_INITIAL_FILTERS))
+#         parser.add_argument('--res-blocks-per-layer', type=int, default=self.RES_BLOCKS_PER_LAYER,
+#             help="Number of residual blocks per layer [default: {}]".format(self.RES_BLOCKS_PER_LAYER))
+#         parser.add_argument('--network-depth', type=int, default=self.NETWORK_DEPTH,
+#             help="Total number of downsamples to apply [default: {}]".format(self.NETWORK_DEPTH))
+
+#         parser.add_argument('--weight-decay', type=float, default=self.WEIGHT_DECAY,
+#             help="Weight decay strength [default: {}]".format(self.WEIGHT_DECAY))
+
+#         # parser.add_argument('--bottleneck-fully-connected', type=str2bool, default=self.BOTTLENECK_FC,
+#         #     help="Whether or not to apply a fully connected layer with dropout as bottleneck [default: {}]".format(self.BOTTLENECK_FC))
+
+#         parser.add_argument('--sparse', type=str2bool, default=self.SPARSE,
+#             help="Run using submanifold sparse convolutions [default: {}]".format(self.SPARSE))
+
+#         parser.add_argument('--batch-norm', type=str2bool, default=self.BATCH_NORM,
+#             help="Run using batch normalization [default: {}]".format(self.BATCH_NORM))
+#         parser.add_argument('--leaky-relu', type=str2bool, default=self.LEAKY_RELU,
+#             help="Run using leaky relu [default: {}]".format(self.LEAKY_RELU))
+
+#         return parser
+
+
+
 class SparseBlock(nn.Module):
 
     def __init__(self, inplanes, outplanes):
