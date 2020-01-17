@@ -91,13 +91,13 @@ class trainercore(object):
 
 
         if FLAGS.DISTRIBUTED:
-            self._larcv_interface.prepare_manager(mode='primary', 
-                                                  io_config=io_config, 
-                                                  minibatch_size=FLAGS.MINIBATCH_SIZE, 
-                                                  data_keys=data_keys, 
+            self._larcv_interface.prepare_manager(mode='primary',
+                                                  io_config=io_config,
+                                                  minibatch_size=FLAGS.MINIBATCH_SIZE,
+                                                  data_keys=data_keys,
                                                   files=FLAGS.FILE,
                                                   random_access_mode="random_blocks",
-                                                  read_option="read_from_single_local_rank")
+                                                  read_option="read_from_all_ranks_mpi")
         else:
             self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys, files=FLAGS.FILE)
 
@@ -138,10 +138,10 @@ class trainercore(object):
 
 
                 if FLAGS.DISTRIBUTED:
-                    self._larcv_interface.prepare_manager(mode='aux', 
-                                                          io_config=io_config, 
-                                                          minibatch_size=FLAGS.AUX_MINIBATCH_SIZE, 
-                                                          data_keys=data_keys, 
+                    self._larcv_interface.prepare_manager(mode='aux',
+                                                          io_config=io_config,
+                                                          minibatch_size=FLAGS.AUX_MINIBATCH_SIZE,
+                                                          data_keys=data_keys,
                                                           files=FLAGS.AUX_FILE,
                                                           random_access_mode="serial_access",
                                                           read_option="read_from_all_ranks_mpi")
@@ -780,7 +780,7 @@ class trainercore(object):
 
                 # Run a forward pass of the model on the input image:
                 logits = self._net(minibatch_data['image'])
-                
+
                 # # Here, we have to map the logit keys to aux keys
                 # for key in logits.keys():
                 #     new_key = 'aux_' + key
@@ -816,7 +816,7 @@ class trainercore(object):
         # Run a forward pass of the model on the input image:
         with torch.no_grad():
             logits = self._net(minibatch_data['image'])
-        
+
         if FLAGS.LABEL_MODE == 'all':
             softmax = torch.nn.Softmax(dim=-1)(logits)
         else:
@@ -839,7 +839,7 @@ class trainercore(object):
                         writable_logits = numpy.asarray(softmax[key].cpu())[entry]
                         self._larcv_interface.write_output(data=writable_logits, datatype='tensor1d', producer=key,
                             entries=this_entry, event_ids=this_event_id)
-                   
+
         # If the input data has labels available, compute the metrics:
         if (FLAGS.LABEL_MODE == 'all' and 'label' in minibatch_data) or \
            (FLAGS.LABEL_MODE == 'split' and 'label_neut' in minibatch_data):
