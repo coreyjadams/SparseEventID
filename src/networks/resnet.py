@@ -2,9 +2,6 @@ import torch
 import torch.nn as nn
 
 
-# from src.utils.args import args
-# args = args()
-
 from . network_config import network_config, str2bool
 
 #
@@ -50,7 +47,7 @@ class ResNetFlags(network_config):
         this_parser.add_argument("--batch-norm",
             help    = "Run using batch normalization",
             type    = str2bool,
-            default = 3)
+            default = True)
 
 
 

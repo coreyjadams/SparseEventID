@@ -11,7 +11,9 @@ sys.path.insert(0,network_dir)
 
 # import the necessary
 # from src.utils import flags
-from src.networks.resnet import ResNetFlags
+from src.networks import resnet
+from src.networks import sparseresnet
+from src.networks import sparseresnet3d
 
 
 import argparse
@@ -112,7 +114,10 @@ The most commonly used commands are:
             description    = 'Which network architecture to use.')
 
         # Here, we do a switch on the networks allowed:        
-        ResNetFlags().build_parser(network_parser)
+        resnet.ResNetFlags().build_parser(network_parser)
+        sparseresnet.ResNetFlags().build_parser(network_parser)
+        sparseresnet3d.ResNetFlags().build_parser(network_parser)
+
 
 
     def iotest(self):
