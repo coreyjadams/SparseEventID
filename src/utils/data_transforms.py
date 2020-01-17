@@ -25,6 +25,7 @@ def larcvsparse_to_scnsparse_3d(input_array):
 
     # First, we can split off the features (which is the pixel value)
     # and the indexes (which is everythin else)
+    print(input_array.shape)
 
     n_dims = input_array.shape[-1]
 
@@ -65,6 +66,8 @@ def larcvsparse_to_scnsparse_2d(input_array):
 
     # To handle the multiplane networks, we have to split this into
     # n_planes and pass it out as a list
+
+    print(input_array.shape)
 
     n_planes = input_array.shape[1]
     batch_size = input_array.shape[0]
@@ -108,12 +111,12 @@ def larcvsparse_to_scnsparse_2d(input_array):
 
     return output_list
 
-def larcvsparse_to_dense_2d(input_array, dense_shape=512):
+def larcvsparse_to_dense_2d(input_array, dense_shape=[1536, 1024]):
 
 
     batch_size = input_array.shape[0]
     n_planes   = input_array.shape[1]
-    output_array = numpy.zeros((batch_size, n_planes, dense_shape, dense_shape), dtype=numpy.float32)
+    output_array = numpy.zeros((batch_size, n_planes, dense_shape[0], dense_shape[1]), dtype=numpy.float32)
 
     x_coords = input_array[:,:,:,0]
     y_coords = input_array[:,:,:,1]
@@ -134,25 +137,42 @@ def larcvsparse_to_dense_2d(input_array, dense_shape=512):
 
     return output_array
 
-def larcvdense_to_scnsparse_3d(input_array):
-    # Convert a full scale 3D tensor (actually 5D, batch + channel at the end)
 
+def larcvsparse_to_torchgeometric_3d(input_array):
+    # This format converts the larcv sparse format to
+    # the tuple format required for sparseconvnet
 
-    n_dims = 4
+    # First, we can split off the features (which is the pixel value)
+    # and the indexes (which is everythin else)
+    print(input_array.shape)
+
+    n_dims = input_array.shape[-1]
+
+    split_tensors = numpy.split(input_array, n_dims, axis=-1)
+
 
     # To map out the non_zero locations now is easy:
-    batch, x, y, z, val = numpy.where(input_array != -999)
-
-    features = input_array[batch,x,y,z,val]
+    non_zero_inds = numpy.where(split_tensors[-1] != -999)
 
     # The batch dimension is just the first piece of the non-zero indexes:
     batch_size  = input_array.shape[0]
+    batch_index = non_zero_inds[0]
+
+    # Getting the voxel values (features) is also straightforward:
+    features = numpy.expand_dims(split_tensors[-1][non_zero_inds],axis=-1)
+
+    # Lastly, we need to stack up the coordinates, which we do here:
+    dimension_list = []
+    for i in range(len(split_tensors) - 1):
+        dimension_list.append(split_tensors[i][non_zero_inds])
+
+    # Tack on the batch index to this list for stacking:
+    dimension_list.append(batch_index)
 
     # And stack this into one numpy array:
-    dimension = numpy.stack([x,y,z,batch], axis=-1)
+    dimension = numpy.stack(dimension_list, axis=-1)
 
-    output_array = (dimension, features, batch_size)
-
+    output_array = (dimension, features, batch_size,)
     return output_array
 
 

@@ -11,10 +11,9 @@ import torch
 from larcv import queueloader
 #from larcv import threadloader
 
-from . import flags
 from . import data_transforms
 from . import io_templates
-FLAGS = flags.FLAGS()
+
 
 import datetime
 
@@ -29,8 +28,9 @@ class trainercore(object):
     a NotImplemented error.
 
     '''
-    def __init__(self,):
-        if not FLAGS.TRAINING:
+    def __init__(self, args):
+        self.args = args
+        if not self.args.training:
             self._larcv_interface = queueloader.queue_interface(random_access_mode="serial_access")
         else:
             self._larcv_interface = queueloader.queue_interface(random_access_mode="random_blocks")
@@ -47,13 +47,17 @@ class trainercore(object):
 
     def _initialize_io(self, color=0):
 
+        # First, verify the files exist:
+        if not os.path.exists(self.args.file):
+            raise Exception(f"File {self.args.file} not found")
+
         # Use the templates to generate a configuration string, which we store into a temporary file
-        if FLAGS.TRAINING:
-            config = io_templates.train_io(input_file=FLAGS.FILE, image_dim=FLAGS.INPUT_DIMENSION,
-                label_mode=FLAGS.LABEL_MODE)
+        if self.args.training:
+            config = io_templates.train_io(input_file=self.args.file, image_dim=self.args.input_dimension,
+                label_mode=self.args.label_mode)
         else:
-            config = io_templates.ana_io(input_file=FLAGS.FILE, image_dim=FLAGS.INPUT_DIMENSION,
-                label_mode=FLAGS.LABEL_MODE)
+            config = io_templates.ana_io(input_file=self.args.file, image_dim=self.args.input_dimension,
+                label_mode=self.args.label_mode)
 
 
         # Generate a named temp file:
@@ -67,7 +71,7 @@ class trainercore(object):
         io_config = {
             'filler_name' : config._name,
             'filler_cfg'  : main_file.name,
-            'verbosity'   : FLAGS.VERBOSITY,
+            'verbosity'   : 5,
             'make_copy'   : True
         }
 
@@ -81,37 +85,41 @@ class trainercore(object):
                 data_keys[proc._name] = proc._name
 
         # Assign the keywords here:
-        if FLAGS.LABEL_MODE == 'all':
-            FLAGS.KEYWORD_LABEL = 'label'
+        if self.args.label_mode == 'all':
+            self.args.keyword_label = 'label'
         else:
-            FLAGS.KEYWORD_LABEL = []
+            self.args.keyword_label = []
             for key in data_keys.keys():
                 if key != 'image':
-                    FLAGS.KEYWORD_LABEL.append(key)
+                    self.args.keyword_label.append(key)
 
 
-        if FLAGS.DISTRIBUTED:
+
+        if self.args.distributed:
             self._larcv_interface.prepare_manager(mode='primary',
                                                   io_config=io_config,
-                                                  minibatch_size=FLAGS.MINIBATCH_SIZE,
+                                                  minibatch_size=self.args.minibatch_size,
                                                   data_keys=data_keys,
-                                                  files=FLAGS.FILE,
+                                                  # files=self.args.file,
                                                   random_access_mode="random_blocks",
                                                   read_option="read_from_all_ranks_mpi")
         else:
-            self._larcv_interface.prepare_manager('primary', io_config, FLAGS.MINIBATCH_SIZE, data_keys, files=FLAGS.FILE)
+            self._larcv_interface.prepare_manager(mode      = 'primary',
+                                                  io_config = io_config,
+                                                  minibatch_size = self.args.minibatch_size,
+                                                  data_keys = data_keys )
 
 
-        if not FLAGS.TRAINING:
-            self._larcv_interface.set_next_index('primary', FLAGS.START_INDEX)
+        if not self.args.training:
+            self._larcv_interface.set_next_index('primary', self.args.start_index)
 
         # All of the additional tools are in case there is a test set up:
-        if FLAGS.AUX_FILE is not None:
+        if self.args.aux_file is not None:
 
 
-            if FLAGS.TRAINING:
-                config = io_templates.test_io(input_file=FLAGS.AUX_FILE, image_dim=FLAGS.INPUT_DIMENSION,
-                    label_mode=FLAGS.LABEL_MODE)
+            if self.args.training:
+                config = io_templates.test_io(input_file=self.args.aux_file, image_dim=self.args.input_dimension,
+                    label_mode=self.args.label_mode)
 
                 # Generate a named temp file:
                 aux_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
@@ -123,7 +131,7 @@ class trainercore(object):
                 io_config = {
                     'filler_name' : config._name,
                     'filler_cfg'  : aux_file.name,
-                    'verbosity'   : FLAGS.VERBOSITY,
+                    'verbosity'   : 5,
                     'make_copy'   : True
                 }
 
@@ -137,20 +145,29 @@ class trainercore(object):
                         data_keys[proc._name] = proc._name
 
 
+<<<<<<< HEAD
                 if FLAGS.DISTRIBUTED:
                     self._larcv_interface.prepare_manager(mode='aux',
                                                           io_config=io_config,
                                                           minibatch_size=FLAGS.AUX_MINIBATCH_SIZE,
                                                           data_keys=data_keys,
                                                           files=FLAGS.AUX_FILE,
+=======
+                if self.args.distributed:
+                    self._larcv_interface.prepare_manager(mode='aux',
+                                                          io_config=io_config,
+                                                          minibatch_size=self.args.aux_minibatch_size,
+                                                          data_keys=data_keys,
+                                                          files=self.args.aux_file,
+>>>>>>> d859251a0e1dcd9963f054a4ecf04eec9be71321
                                                           random_access_mode="serial_access",
                                                           read_option="read_from_all_ranks_mpi")
                 else:
-                    self._larcv_interface.prepare_manager('aux', io_config, FLAGS.AUX_MINIBATCH_SIZE, data_keys, files=FLAGS.AUX_FILE)
+                    self._larcv_interface.prepare_manager('aux', io_config, self.args.aux_minibatch_size, data_keys, files=self.args.aux_file)
 
-        if FLAGS.OUTPUT_FILE is not None:
-            if not FLAGS.TRAINING:
-                config = io_templates.output_io(input_file=FLAGS.FILE, output_file=FLAGS.OUTPUT_FILE)
+        if 'output_file' in self.args and self.args.output_file is not None:
+            if not self.args.training:
+                config = io_templates.output_io(input_file=self.args.file, output_file=self.args.output_file)
 
                 out_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
                 out_file.write(config.generate_config_str())
@@ -159,7 +176,7 @@ class trainercore(object):
                 out_file.close()
                 self._cleanup.append(out_file)
 
-                self._larcv_interface.prepare_writer(io_config=out_file.name, input_files=FLAGS.FILE, output_file=FLAGS.OUTPUT_FILE)
+                self._larcv_interface.prepare_writer(io_config=out_file.name, input_files=self.args.file, output_file=self.args.output_file)
 
 
 
@@ -168,16 +185,30 @@ class trainercore(object):
         dims = self._larcv_interface.fetch_minibatch_dims('primary')
 
         # This sets up the necessary output shape:
-        if FLAGS.LABEL_MODE == 'split':
-            output_shape = { key : dims[key] for key in FLAGS.KEYWORD_LABEL}
+        if self.args.label_mode == 'split':
+            output_shape = { key : dims[key] for key in self.args.keyword_label}
         else:
-            output_shape = dims[FLAGS.KEYWORD_LABEL]
+            output_shape = dims[self.args.keyword_label]
 
 
-        self._net = FLAGS._net(output_shape)
+        # To initialize the network, we see what the name is
+        # and act on that:
+        if self.args.network == "resnet2d":
+            from src.networks import resnet
+            self._net = resnet.ResNet(output_shape, self.args)
+        elif self.args.network == "sparseresnet2d":
+            from src.networks import sparseresnet
+            self._net = sparseresnet.ResNet(output_shape, self.args)
+        elif self.args.network == "sparseresnet3d":
+            from src.networks import sparseresnet
+            self._net = sparseresnet3d.ResNet(output_shape, self.args)
+        else:
+            raise Exception(f"Couldn't identify network {self.args.network}")
 
 
-        if FLAGS.TRAINING:
+
+
+        if self.args.training:
             self._net.train(True)
 
     def initialize(self, io_only=False):
@@ -190,7 +221,6 @@ class trainercore(object):
         if io_only:
             return
 
-        FLAGS.dump_config()
 
         self.init_network()
 
@@ -211,22 +241,22 @@ class trainercore(object):
             self._global_step = 0
 
 
-        if FLAGS.COMPUTE_MODE == "CPU":
+        if self.args.compute_mode == "CPU":
             pass
-        if FLAGS.COMPUTE_MODE == "GPU":
+        if self.args.compute_mode == "GPU":
             self._net.cuda()
 
-        if FLAGS.LABEL_MODE == 'all':
+        if self.args.label_mode == 'all':
             self._log_keys = ['loss', 'accuracy']
-        elif FLAGS.LABEL_MODE == 'split':
+        elif self.args.label_mode == 'split':
             self._log_keys = ['loss']
-            for key in FLAGS.KEYWORD_LABEL:
+            for key in self.args.keyword_label:
                 self._log_keys.append('acc/{}'.format(key))
 
 
     def get_device(self):
         # Convert the input data to torch tensors
-        if FLAGS.COMPUTE_MODE == "GPU":
+        if self.args.compute_mode == "GPU":
             device = torch.device('cuda')
             # print(device)
         else:
@@ -238,12 +268,12 @@ class trainercore(object):
     def init_optimizer(self):
 
         # Create an optimizer:
-        if FLAGS.OPTIMIZER == "SDG":
-            self._opt = torch.optim.SGD(self._net.parameters(), lr=FLAGS.LEARNING_RATE,
-                weight_decay=FLAGS.WEIGHT_DECAY)
+        if self.args.optimizer == "SDG":
+            self._opt = torch.optim.SGD(self._net.parameters(), lr=self.args.learning_rate,
+                weight_decay=self.args.weight_decay)
         else:
-            self._opt = torch.optim.Adam(self._net.parameters(), lr=FLAGS.LEARNING_RATE,
-                weight_decay=FLAGS.WEIGHT_DECAY)
+            self._opt = torch.optim.Adam(self._net.parameters(), lr=self.args.learning_rate,
+                weight_decay=self.args.weight_decay)
 
 
 
@@ -252,7 +282,7 @@ class trainercore(object):
         device = self.get_device()
 
         # here we store the loss weights:
-        if FLAGS.LABEL_MODE == 'all':
+        if self.args.label_mode == 'all':
             self._label_weights = torch.tensor([
                 4930., 247., 2311., 225., 11833., 1592., 3887., 378., 4966., 1169., 1944., 335.,
                 5430., 201., 1630., 67., 13426., 1314., 3111., 243., 5070., 788., 1464., 163.,
@@ -264,7 +294,7 @@ class trainercore(object):
             self._criterion = torch.nn.CrossEntropyLoss(weight=self._label_weights)
 
 
-        elif FLAGS.LABEL_MODE == 'split':
+        elif self.args.label_mode == 'split':
             # These are the raw category occurences
             self._label_weights = {
                 'label_cpi'  : torch.tensor([50932., 61269.], device=device),
@@ -287,13 +317,13 @@ class trainercore(object):
     def init_saver(self):
 
         # This sets up the summary saver:
-        if FLAGS.TRAINING:
-            self._saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY)
+        if self.args.training:
+            self._saver = tensorboardX.SummaryWriter(self.args.log_directory)
 
-        if FLAGS.AUX_FILE is not None and FLAGS.TRAINING:
-            self._aux_saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY + "/test/")
-        elif FLAGS.AUX_FILE is not None and not FLAGS.TRAINING:
-            self._aux_saver = tensorboardX.SummaryWriter(FLAGS.LOG_DIRECTORY + "/val/")
+        if self.args.aux_file is not None and self.args.training:
+            self._aux_saver = tensorboardX.SummaryWriter(self.args.log_directory + "/test/")
+        elif self.args.aux_file is not None and not self.args.training:
+            self._aux_saver = tensorboardX.SummaryWriter(self.args.log_directory + "/val/")
 
         else:
             self._aux_saver = None
@@ -328,7 +358,7 @@ class trainercore(object):
                     print("Restoring weights from ", chkp_file)
                     break
 
-        if FLAGS.COMPUTE_MODE == "CPU":
+        if self.args.compute_mode == "CPU":
             state = torch.load(chkp_file, map_location='cpu')
         else:
             state = torch.load(chkp_file)
@@ -343,7 +373,7 @@ class trainercore(object):
         self._global_step = state['global_step']
 
         # If using GPUs, move the model to GPU:
-        if FLAGS.COMPUTE_MODE == "GPU":
+        if self.args.compute_mode == "GPU":
             for state in self._opt.state.values():
                 for k, v in state.items():
                     if torch.is_tensor(v):
@@ -414,10 +444,10 @@ class trainercore(object):
         '''
 
         # Find the base path of the log directory
-        if FLAGS.CHECKPOINT_DIRECTORY == None:
-            file_path= FLAGS.LOG_DIRECTORY  + "/checkpoints/"
+        if self.args.checkpoint_directory == None:
+            file_path= self.args.log_directory  + "/checkpoints/"
         else:
-            file_path= FLAGS.CHECKPOINT_DIRECTORY  + "/checkpoints/"
+            file_path= self.args.checkpoint_directory  + "/checkpoints/"
 
 
         name = file_path + 'model-{}.ckpt'.format(self._global_step)
@@ -449,11 +479,11 @@ class trainercore(object):
         # And it is difficult to bust out of that.
 
 
-        if FLAGS.LABEL_MODE == 'all':
-            values, target = torch.max(inputs[FLAGS.KEYWORD_LABEL], dim = 1)
+        if self.args.label_mode == 'all':
+            values, target = torch.max(inputs[self.args.keyword_label], dim = 1)
             loss = self._criterion(logits, target=target)
             return loss
-        elif FLAGS.LABEL_MODE == 'split':
+        elif self.args.label_mode == 'split':
             loss = None
             for key in logits:
                 values, target = torch.max(inputs[key], dim=1)
@@ -480,14 +510,14 @@ class trainercore(object):
 
         # Compare how often the input label and the output prediction agree:
 
-        if FLAGS.LABEL_MODE == 'all':
+        if self.args.label_mode == 'all':
 
-            values, indices = torch.max(minibatch_data[FLAGS.KEYWORD_LABEL], dim = 1)
+            values, indices = torch.max(minibatch_data[self.args.keyword_label], dim = 1)
             values, predict = torch.max(logits, dim=1)
             correct_prediction = torch.eq(predict,indices)
             accuracy = torch.mean(correct_prediction.float())
 
-        elif FLAGS.LABEL_MODE == 'split':
+        elif self.args.label_mode == 'split':
             accuracy = {}
             for key in logits:
 
@@ -506,9 +536,9 @@ class trainercore(object):
 
         metrics['loss']     = loss.data
         accuracy = self._calculate_accuracy(logits, minibatch_data)
-        if FLAGS.LABEL_MODE == 'all':
+        if self.args.label_mode == 'all':
             metrics['accuracy'] = accuracy
-        elif FLAGS.LABEL_MODE == 'split':
+        elif self.args.label_mode == 'split':
             for key in accuracy:
                 metrics['acc/{}'.format(key)] = accuracy[key]
 
@@ -517,7 +547,7 @@ class trainercore(object):
     def log(self, metrics, saver=''):
 
 
-        if self._global_step % FLAGS.LOGGING_ITERATION == 0:
+        if self._global_step % self.args.logging_iteration == 0:
 
             self._current_log_time = datetime.datetime.now()
 
@@ -559,7 +589,7 @@ class trainercore(object):
         if self._saver is None:
             return
 
-        if self._global_step % FLAGS.SUMMARY_ITERATION == 0:
+        if self._global_step % self.args.summary_iteration == 0:
             for metric in metrics:
                 name = metric
                 if saver == "test":
@@ -584,6 +614,7 @@ class trainercore(object):
         minibatch_data = self._larcv_interface.fetch_minibatch_data(mode, pop=True, fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(mode)
 
+
         for key in minibatch_data:
             if key == 'entries' or key == 'event_ids':
                 continue
@@ -599,36 +630,30 @@ class trainercore(object):
 
 
         # Here, do some massaging to convert the input data to another format, if necessary:
-        if FLAGS.IMAGE_MODE == 'dense' and not FLAGS.SPARSE:
-            # Don't have to do anything here
-            pass
-        elif FLAGS.IMAGE_MODE == 'dense' and FLAGS.SPARSE:
-            # Have to convert the input image from dense to sparse format:
-            if FLAGS.INPUT_DIMENSION == '3D':
-                minibatch_data['image'] = data_transforms.larcvdense_to_scnsparse_3d(minibatch_data['image'])
-            else:
-                minibatch_data['image'] = data_transforms.larcvdense_to_scnsparse_2d(minibatch_data['image'])
-        elif FLAGS.IMAGE_MODE == 'sparse' and not FLAGS.SPARSE:
+        if self.args.image_mode == 'dense':
             # Need to convert sparse larcv into a dense numpy array:
-            if FLAGS.INPUT_DIMENSION == '3D':
+            if self.args.input_dimension == 3:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_dense_3d(minibatch_data['image'])
             else:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_dense_2d(minibatch_data['image'])
-
-
-        elif FLAGS.IMAGE_MODE == 'sparse' and FLAGS.SPARSE:
-            if FLAGS.INPUT_DIMENSION == '3D':
+        elif self.args.image_mode == 'sparse':
+            # Have to convert the input image from dense to sparse format:
+            if self.args.input_dimension == 3:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_3d(minibatch_data['image'])
             else:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_2d(minibatch_data['image'])
+        elif self.args.image_mode == 'graph':
+            pass
+        else:
+            raise Exception("Image Mode not recognized")
 
         return minibatch_data
 
     def increment_global_step(self):
 
-        previous_epoch = int((self._global_step * FLAGS.MINIBATCH_SIZE) / self._epoch_size)
+        previous_epoch = int((self._global_step * self.args.minibatch_size) / self._epoch_size)
         self._global_step += 1
-        current_epoch = int((self._global_step * FLAGS.MINIBATCH_SIZE) / self._epoch_size)
+        current_epoch = int((self._global_step * self.args.minibatch_size) / self._epoch_size)
 
         self.on_step_end()
 
@@ -644,7 +669,7 @@ class trainercore(object):
     def to_torch(self, minibatch_data, device=None):
 
         # Convert the input data to torch tensors
-        if FLAGS.COMPUTE_MODE == "GPU":
+        if self.args.compute_mode == "GPU":
             if device is None:
                 device = torch.device('cuda')
             # print(device)
@@ -657,8 +682,8 @@ class trainercore(object):
         for key in minibatch_data:
             if key == 'entries' or key =='event_ids':
                 continue
-            if key == 'image' and FLAGS.SPARSE:
-                if FLAGS.INPUT_DIMENSION == '3D':
+            if key == 'image' and self.args.image_mode == "sparse":
+                if self.args.input_dimension == 3:
                     minibatch_data['image'] = (
                             torch.tensor(minibatch_data['image'][0]).long(),
                             torch.tensor(minibatch_data['image'][1], device=device),
@@ -715,7 +740,7 @@ class trainercore(object):
         # Add the global step / second to the tensorboard log:
         try:
             metrics['global_step_per_sec'] = 1./self._seconds_per_global_step
-            metrics['images_per_second'] = FLAGS.MINIBATCH_SIZE / self._seconds_per_global_step
+            metrics['images_per_second'] = self.args.minibatch_size / self._seconds_per_global_step
         except:
             metrics['global_step_per_sec'] = 0.0
             metrics['images_per_second'] = 0.0
@@ -755,10 +780,10 @@ class trainercore(object):
     def val_step(self, n_iterations=1):
 
         # First, validation only occurs on training:
-        if not FLAGS.TRAINING: return
+        if not self.args.training: return
 
         # Second, validation can not occur without a validation dataloader.
-        if FLAGS.AUX_FILE is None: return
+        if self.args.aux_file is None: return
 
         # perform a validation step
         # Validation steps can optionally accumulate over several minibatches, to
@@ -768,7 +793,7 @@ class trainercore(object):
 
         with torch.no_grad():
 
-            if self._global_step != 0 and self._global_step % FLAGS.AUX_ITERATION == 0:
+            if self._global_step != 0 and self._global_step % self.args.aux_iteration == 0:
 
 
                 # Fetch the next batch of data with larcv
@@ -802,7 +827,7 @@ class trainercore(object):
 
     def ana_step(self, iteration=None):
 
-        if FLAGS.TRAINING: return
+        if self.args.training: return
 
         # Set network to eval mode
         self._net.eval()
@@ -816,20 +841,25 @@ class trainercore(object):
         # Run a forward pass of the model on the input image:
         with torch.no_grad():
             logits = self._net(minibatch_data['image'])
+<<<<<<< HEAD
 
         if FLAGS.LABEL_MODE == 'all':
+=======
+
+        if self.args.label_mode == 'all':
+>>>>>>> d859251a0e1dcd9963f054a4ecf04eec9be71321
             softmax = torch.nn.Softmax(dim=-1)(logits)
         else:
             softmax = { key : torch.nn.Softmax(dim=-1)(logits[key]) for key in logits }
 
         # Call the larcv interface to write data:
-        if FLAGS.OUTPUT_FILE is not None:
-            if FLAGS.LABEL_MODE == 'all':
+        if self.args.output_file is not None:
+            if self.args.label_mode == 'all':
                 writable_logits = numpy.asarray(softmax.cpu())
                 self._larcv_interface.write_output(data=writable_logits[0], datatype='meta', producer='all',
                     entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
             else:
-                for entry in range(FLAGS.MINIBATCH_SIZE):
+                for entry in range(self.args.minibatch_size):
                     if iteration > 1 and minibatch_data['entries'][entry] == 0:
                         print ('Reached max number of entries.')
                         break
@@ -841,8 +871,8 @@ class trainercore(object):
                             entries=this_entry, event_ids=this_event_id)
 
         # If the input data has labels available, compute the metrics:
-        if (FLAGS.LABEL_MODE == 'all' and 'label' in minibatch_data) or \
-           (FLAGS.LABEL_MODE == 'split' and 'label_neut' in minibatch_data):
+        if (self.args.label_mode == 'all' and 'label' in minibatch_data) or \
+           (self.args.label_mode == 'split' and 'label_neut' in minibatch_data):
             # Compute the loss
             loss = self._calculate_loss(minibatch_data, logits)
 
@@ -865,10 +895,10 @@ class trainercore(object):
 
     def checkpoint(self):
 
-        if FLAGS.CHECKPOINT_ITERATION == -1:
+        if self.args.checkpoint_iteration == -1:
             return
 
-        if self._global_step % FLAGS.CHECKPOINT_ITERATION == 0 and self._global_step != 0:
+        if self._global_step % self.args.checkpoint_iteration == 0 and self._global_step != 0:
             # Save a checkpoint, but don't do it on the first pass
             self.save_model()
 
@@ -881,20 +911,20 @@ class trainercore(object):
         # This is the 'master' function, so it controls a lot
 
         # If we're not training, force the number of iterations to the epoch size or less
-        if not FLAGS.TRAINING:
-            if FLAGS.ITERATIONS > int(self._epoch_size/FLAGS.MINIBATCH_SIZE) + 1:
-                FLAGS.ITERATIONS = int(self._epoch_size/FLAGS.MINIBATCH_SIZE) + 1
-                print('Number of iterations set to', FLAGS.ITERATIONS)
+        if not self.args.training:
+            if self.args.iterations > int(self._epoch_size/self.args.minibatch_size) + 1:
+                self.args.iterations = int(self._epoch_size/self.args.minibatch_size) + 1
+                print('Number of iterations set to', self.args.iterations)
 
 
         # Run iterations
-        for i in range(FLAGS.ITERATIONS):
-            if FLAGS.TRAINING and self._iteration >= FLAGS.ITERATIONS:
+        for i in range(self.args.iterations):
+            if self.args.training and self._iteration >= self.args.iterations:
                 print('Finished training (iteration %d)' % self._iteration)
                 self.checkpoint()
                 break
 
-            if FLAGS.TRAINING:
+            if self.args.training:
                 self.val_step()
                 self.train_step()
                 self.checkpoint()
@@ -902,7 +932,7 @@ class trainercore(object):
                 self.ana_step(i)
 
 
-        if FLAGS.TRAINING:
+        if self.args.training:
             if self._saver is not None:
                 self._saver.close()
             if self._aux_saver is not None:

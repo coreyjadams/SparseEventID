@@ -2,21 +2,65 @@ import torch
 import torch.nn as nn
 
 
-from src import utils
+from . network_config import network_config, str2bool
 
-FLAGS = utils.flags.FLAGS()
 #
 # The 3D convolution method for 2D images is very, very slow.
 # Much faster to use 2D convolutions 3 times
 
+class ResNetFlags(network_config):
+
+    def __init__(self):
+        network_config.__init__(self)
+        self._name = "resnet2d"
+        self._help = "Dense Resnet with siamese tower structure"
+
+    def build_parser(self, network_parser):
+        # this_parser = network_parser
+        this_parser = network_parser.add_parser(self._name, help=self._help)
+
+        this_parser.add_argument("--n-initial-filters",
+            type    = int,
+            default = 2,
+            help    = "Number of filters applied, per plane, for the initial convolution")
+
+        this_parser.add_argument("--res-blocks-per-layer",
+            help    = "Number of residual blocks per layer",
+            type    = int,
+            default = 2)
+
+        this_parser.add_argument("--network-depth-pre-merge",
+            help    = "Total number of downsamples to apply before merging planes",
+            type    = int,
+            default = 4)
+
+        this_parser.add_argument("--network-depth-post-merge",
+            help    = "Total number of downsamples to apply after merging planes",
+            type    = int,
+            default = 2)
+
+        this_parser.add_argument("--nplanes",              
+            help    = "Number of planes to split the initial image into",
+            type    = int,
+            default = 3)
+
+        this_parser.add_argument("--batch-norm",
+            help    = "Run using batch normalization",
+            type    = str2bool,
+            default = True)
+
+
+
+
+
 
 class Block(nn.Module):
 
-    def __init__(self, inplanes, outplanes):
+    def __init__(self, inplanes, outplanes, batch_norm):
 
         nn.Module.__init__(self)
         
-
+        self.batch_norm = batch_norm
 
         self.conv1 = torch.nn.Conv2d(
             in_channels  = inplanes, 
@@ -26,18 +70,16 @@ class Block(nn.Module):
             padding      = [1, 1],
             bias         = False)
         
-        # if FLAGS.BATCH_NORM:
-        self.bn1  = torch.nn.BatchNorm2d(outplanes)
+        if batch_norm:
+            self.bn1  = torch.nn.BatchNorm2d(outplanes)
         self.relu = torch.nn.ReLU()
 
     def forward(self, x):
 
         out = self.conv1(x)
-        # if FLAGS.BATCH_NORM:
-        out = self.bn1(out)
+        if self.batch_norm:
+            out = self.bn1(out)
         out = self.relu(out)
-        # else:
-            # out = self.relu(out)
 
         return out
 
@@ -45,9 +87,11 @@ class Block(nn.Module):
 
 class ResidualBlock(nn.Module):
 
-    def __init__(self, inplanes, outplanes):
+    def __init__(self, inplanes, outplanes, batch_norm):
         nn.Module.__init__(self)
         
+        self.batch_norm = batch_norm
+
         self.conv1 = torch.nn.Conv2d(
             in_channels  = inplanes, 
             out_channels = outplanes, 
@@ -56,8 +100,8 @@ class ResidualBlock(nn.Module):
             padding      = [1, 1],
             bias         = False)
         
-        # if FLAGS.BATCH_NORM:
-        self.bn1  = torch.nn.BatchNorm2d(outplanes)
+        if batch_norm:
+            self.bn1  = torch.nn.BatchNorm2d(outplanes)
 
 
         self.conv2 = torch.nn.Conv2d(
@@ -68,8 +112,8 @@ class ResidualBlock(nn.Module):
             padding      = [1, 1],
             bias         = False)
 
-        # if FLAGS.BATCH_NORM:
-        self.bn2  = torch.nn.BatchNorm2d(outplanes)
+        if batch_norm:
+            self.bn2  = torch.nn.BatchNorm2d(outplanes)
 
         self.relu = torch.nn.ReLU()
 
@@ -79,13 +123,13 @@ class ResidualBlock(nn.Module):
         residual = x
 
         out = self.conv1(x)        
-        # if FLAGS.BATCH_NORM:
-        out = self.bn1(out)
-        # else:
-            # out = self.relu(out)
+        if self.batch_norm:
+            out = self.bn1(out)
+
         out = self.conv2(out)
-        # if FLAGS.BATCH_NORM:
-        out = self.bn2(out)
+
+        if self.batch_norm:
+            out = self.bn2(out)
 
         out = self.relu(out + residual)
 
@@ -96,8 +140,9 @@ class ResidualBlock(nn.Module):
 
 class ConvolutionDownsample(nn.Module):
 
-    def __init__(self, inplanes, outplanes):
+    def __init__(self, inplanes, outplanes, batch_norm):
         nn.Module.__init__(self)
+        self.batch_norm = batch_norm
 
         self.conv = torch.nn.Conv2d(
             in_channels  = inplanes,
@@ -107,15 +152,18 @@ class ConvolutionDownsample(nn.Module):
             padding      = [0,0],
             bias         = False
         )
-        # if FLAGS.BATCH_NORM:
-        self.bn   = torch.nn.BatchNorm2d(outplanes)
+
+        if batch_norm:
+            self.bn1  = torch.nn.BatchNorm2d(outplanes)
+
+
         self.relu = torch.nn.ReLU()
 
     def forward(self, x):
         out = self.conv(x)
 
-        # if FLAGS.BATCH_NORM:
-        out = self.bn(out)
+        if self.batch_norm:
+            out = self.bn1(out)
 
         out = self.relu(out)
         return out
@@ -123,13 +171,13 @@ class ConvolutionDownsample(nn.Module):
 class BlockSeries(torch.nn.Module):
 
 
-    def __init__(self, inplanes, n_blocks, residual=False):
+    def __init__(self, inplanes, n_blocks, batch_norm, residual=False):
         torch.nn.Module.__init__(self)
 
         if residual:
-            self.blocks = [ ResidualBlock(inplanes, inplanes) for i in range(n_blocks) ]
+            self.blocks = [ ResidualBlock(inplanes, inplanes, batch_norm) for i in range(n_blocks) ]
         else:
-            self.blocks = [ Block(inplanes, inplanes) for i in range(n_blocks)]
+            self.blocks = [ Block(inplanes, inplanes, batch_norm) for i in range(n_blocks)]
 
         for i, block in enumerate(self.blocks):
             self.add_module('block_{}'.format(i), block)
@@ -144,46 +192,58 @@ class BlockSeries(torch.nn.Module):
 
 
 
-def filter_increase(input_filters):
+def filter_increase(input_filters, initial_filters):
     # return input_filters * 2
-    return input_filters + FLAGS.N_INITIAL_FILTERS
+    return input_filters + initial_filters
 
 
 class ResNet(torch.nn.Module):
 
-    def __init__(self, output_shape):
+    def __init__(self, output_shape, args):
         torch.nn.Module.__init__(self)
-        # All of the parameters are controlled via the flags module
+        # All of the parameters are controlled via the args module
 
+        if args.image_mode != "dense":
+            raise Exception("You have selected resnet2d but have not set image-mode to dense, error!")
+
+        if args.input_dimension != 2:
+            raise Exception("You have selected resnet2d but have not set input-dimension to 2, error!")
+
+
+        self.nplanes    = args.nplanes
+        self.label_mode = args.label_mode
         
         # We apply an initial convolution, to each plane, to get n_inital_filters
 
 
         self.initial_convolution = torch.nn.Conv2d(
             in_channels  = 1, 
-            out_channels = FLAGS.N_INITIAL_FILTERS, 
+            out_channels = args.n_initial_filters, 
             kernel_size  = [5, 5], 
             stride       = [1, 1],
             padding      = [2, 2],
             bias         = False)
 
 
-        n_filters = FLAGS.N_INITIAL_FILTERS
+        n_filters = args.n_initial_filters
         # Next, build out the convolution steps
 
 
         self.pre_convolutional_layers = []
-        for layer in range(FLAGS.NETWORK_DEPTH_PRE_MERGE):
-            out_filters = filter_increase(n_filters)
+        for layer in range(args.network_depth_pre_merge):
+            out_filters = filter_increase(n_filters, args.n_initial_filters)
 
             self.pre_convolutional_layers.append(
                 BlockSeries(inplanes = n_filters, 
-                    n_blocks = FLAGS.RES_BLOCKS_PER_LAYER,
-                    residual = True)
+                    n_blocks   = args.res_blocks_per_layer,
+                    residual   = True,
+                    batch_norm = args.batch_norm)
                 )
             self.pre_convolutional_layers.append(
-                ConvolutionDownsample(inplanes=n_filters,
-                    outplanes = out_filters)
+                ConvolutionDownsample(
+                    inplanes   = n_filters,
+                    outplanes  = out_filters,
+                    batch_norm = args.batch_norm)
                 )
 
             n_filters = out_filters
@@ -192,23 +252,25 @@ class ResNet(torch.nn.Module):
             self.add_module("pre_merge_down_{}".format(layer), 
                 self.pre_convolutional_layers[-1])
 
-        n_filters *= FLAGS.NPLANES
+        n_filters *= args.nplanes
         
         self.post_convolutional_layers = []
 
-        for layer in range(FLAGS.NETWORK_DEPTH_POST_MERGE):
-            out_filters = filter_increase(n_filters)
+        for layer in range(args.network_depth_post_merge):
+            out_filters = filter_increase(n_filters, args.n_initial_filters)
 
             self.post_convolutional_layers.append(
                 BlockSeries(
-                    inplanes = n_filters, 
-                    n_blocks = FLAGS.RES_BLOCKS_PER_LAYER,
-                    residual = True)
+                    inplanes   = n_filters, 
+                    n_blocks   = args.res_blocks_per_layer,
+                    residual   = True,
+                    batch_norm = args.batch_norm)
                 )
             self.post_convolutional_layers.append(
                 ConvolutionDownsample(
-                    inplanes  = n_filters,
-                    outplanes = out_filters)
+                    inplanes   = n_filters,
+                    outplanes  = out_filters,
+                    batch_norm = args.batch_norm)
                 )
             n_filters = out_filters
 
@@ -225,44 +287,30 @@ class ResNet(torch.nn.Module):
         # This is either once to get one set of labels, or several times to split the network
         # output to multiple labels
 
-        if FLAGS.LABEL_MODE == 'all':
-            # self.final_layer = SparseBlockSeries(n_filters, 
-            #     n_filters, 
-            #     FLAGS.RES_BLOCKS_PER_LAYER,
-            #     nplanes=FLAGS.NPLANES)
 
-            # self.bottleneck = scn.Convolution(dimension=3, 
-            #             nIn             = n_filters,
-            #             nOut            = output_shape[-1],
-            #             filter_size     = [FLAGS.NPLANES,spatial_size,spatial_size],
-            #             filter_stride   = [1,1,1],
-            #             bias            = False)
+        self.final_layer = { 
+                key : BlockSeries(
+                    inplanes    = n_filters, 
+                    n_blocks    = args.res_blocks_per_layer,
+                    residual    = True,
+                    batch_norm  = args.batch_norm)
+                for key in output_shape
+            }
+        self.bottleneck  = { 
+                key : torch.nn.Conv2d(
+                    in_channels  = n_filters, 
+                    out_channels = output_shape[key][-1], 
+                    kernel_size  = [1,1], 
+                    stride       = [1,1],
+                    padding      = [0,0],
+                    bias         = False)
+                for key in output_shape
+            }
+    
 
-            # self.sparse_to_dense = scn.SparseToDense(dimension=3, nPlanes=output_shape[-1])
-            pass
-        else:
-            self.final_layer = { 
-                    key : BlockSeries(
-                        inplanes = n_filters, 
-                        n_blocks = FLAGS.RES_BLOCKS_PER_LAYER,
-                        residual = True)
-                    for key in output_shape
-                }
-            self.bottleneck  = { 
-                    key : torch.nn.Conv2d(
-                        in_channels  = n_filters, 
-                        out_channels = output_shape[key][-1], 
-                        kernel_size  = [1,1], 
-                        stride       = [1,1],
-                        padding      = [0,0],
-                        bias=False)
-                    for key in output_shape
-                }
-        
-
-            for key in self.final_layer:
-                self.add_module("final_layer_{}".format(key), self.final_layer[key])
-                self.add_module("bottleneck_{}".format(key), self.bottleneck[key])
+        for key in self.final_layer:
+            self.add_module("final_layer_{}".format(key), self.final_layer[key])
+            self.add_module("bottleneck_{}".format(key), self.bottleneck[key])
 
 
 
@@ -282,7 +330,7 @@ class ResNet(torch.nn.Module):
 
         # Reshape this tensor into the right shape to apply this multiplane network.
 
-        x = torch.chunk(x, chunks=FLAGS.NPLANES, dim=1)
+        x = torch.chunk(x, chunks=self.nplanes, dim=1)
 
 
         # Apply the initial convolutions:
@@ -300,7 +348,7 @@ class ResNet(torch.nn.Module):
 
         # Apply the final steps to get the right output shape
 
-        if FLAGS.LABEL_MODE == 'all':
+        if self.label_mode == 'all':
             # Apply the final residual block:
             output = self.final_layer(x)
             # Apply the bottle neck to make the right number of output filters:
