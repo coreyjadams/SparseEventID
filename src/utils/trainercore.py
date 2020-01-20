@@ -633,6 +633,7 @@ class trainercore(object):
             else:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_2d(minibatch_data['image'])
         elif self.args.image_mode == 'graph':
+            minibatch_data['image'] = data_transforms.larcvsparse_to_torchgeometric(minibatch_data['image'])
             pass
         else:
             raise Exception("Image Mode not recognized")
