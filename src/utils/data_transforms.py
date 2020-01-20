@@ -6,10 +6,10 @@ From sparse to dense or dense to sparse, etc.
 
 This can also convert from sparse to sparse to rearrange formats
 For example, larcv BatchFillerSparseTensor2D (and 3D) output data
-with the format of 
-    [B, N_planes, Max_voxels, N_features] 
+with the format of
+    [B, N_planes, Max_voxels, N_features]
 
-where N_features is 2 or 3 depending on whether or not values are included 
+where N_features is 2 or 3 depending on whether or not values are included
 (or 3 or 4 in the 3D case)
 
 # The input of a pointnet type format can work with this, but SparseConvNet
@@ -28,7 +28,6 @@ def larcvsparse_to_scnsparse_3d(input_array):
 
     # First, we can split off the features (which is the pixel value)
     # and the indexes (which is everythin else)
-    print(input_array.shape)
 
     n_dims = input_array.shape[-1]
 
@@ -184,7 +183,6 @@ def larcvsparse_to_scnsparse_2d(input_array):
     # To handle the multiplane networks, we have to split this into
     # n_planes and pass it out as a list
 
-    print(input_array.shape)
 
     n_planes = input_array.shape[1]
     batch_size = input_array.shape[0]
@@ -250,7 +248,7 @@ def larcvsparse_to_dense_2d(input_array, dense_shape=[1536, 1024]):
 
     # Fill in the output tensor
 
-    output_array[batch_index, plane_index, x_index, y_index] = values    
+    output_array[batch_index, plane_index, x_index, y_index] = values
 
     return output_array
 
@@ -291,5 +289,3 @@ def larcvsparse_to_torchgeometric_3d(input_array):
 
     output_array = (dimension, features, batch_size,)
     return output_array
-
-
