@@ -193,6 +193,15 @@ class trainercore(object):
         elif self.args.network == "sparseresnet3d":
             from src.networks import sparseresnet3d
             self._net = sparseresnet3d.ResNet(output_shape, self.args)
+        elif self.args.network == "pointnet":
+            from src.networks import pointnet
+            self._net = pointnet.PointNet(output_shape, self.args)
+        elif self.args.network == "gcn":
+            from src.networks import gcn
+            self._net = gcn.GCNNet(output_shape, self.args)
+        elif self.args.network == "dgcnn":
+            from src.networks import dgcnn
+            self._net = dgcnn.DGCNN(output_shape, self.args)
         else:
             raise Exception(f"Couldn't identify network {self.args.network}")
 
@@ -687,6 +696,8 @@ class trainercore(object):
                             torch.tensor(minibatch_data['image'][1], device=device),
                             minibatch_data['image'][2],
                         )
+            elif key == 'image' and self.args.image_mode == 'graph':
+                minibatch_data[key] = minibatch_data[key].to(device)
             else:
                 minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
 

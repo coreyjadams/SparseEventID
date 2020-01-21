@@ -1,144 +1,121 @@
-# import sys
+import os.path as osp
 
-# import tensorflow as tf
+import torch
+from torch.nn import Sequential as Seq, Linear as Lin, ReLU, BatchNorm1d as BN
+from torch_geometric.nn import PointConv, fps, radius, global_max_pool
 
-# from .utils import transform_net, mlp
+from . network_config import network_config, str2bool
 
-# from .flags import FLAGS
+#
+# The 3D convolution method for 2D images is very, very slow.
+# Much faster to use 2D convolutions 3 times
 
-# # Main class
-# class pointnet(object):
-#     '''Define a network model and run training
+class PointNetFlags(network_config):
 
-#     resnet implementation
-#     '''
-#     def __init__(self):
-#         '''initialization
+    def __init__(self):
+        network_config.__init__(self)
+        self._name = "pointnet"
+        self._help = "PointNet Architecture with extra linear layers for multi-key classification"
 
-#         Requires a list of parameters as python dictionary
+    def build_parser(self, network_parser):
+        # this_parser = network_parser
+        this_parser = network_parser.add_parser(self._name, help=self._help)
 
-#         Arguments:
-#             params {dict} -- Network parameters
-
-#         Raises:
-#             ConfigurationException -- Missing a required parameter
-#         '''
-
-#         return
+        # this_parser.add_argument("--n-initial-filters",
+        #     type    = int,
+        #     default = 2,
+        #     help    = "Number of filters applied, per plane, for the initial convolution")
 
 
-#     def _build_network(self, inputs):
 
-#         ''' verbosity 0 = no printouts
-#             verbosity 1 = sparse information
-#             verbosity 2 = debug
-#         '''
 
+
+class SAModule(torch.nn.Module):
+    def __init__(self, ratio, r, nn):
+        super(SAModule, self).__init__()
+        self.ratio = ratio
+        self.r = r
+        self.conv = PointConv(nn)
+
+    def forward(self, x, pos, batch):
+        idx = fps(pos, batch, ratio=self.ratio)
+        print("idx.shape: ", idx.shape)
+        row, col = radius(pos, pos[idx], self.r, batch, batch[idx],
+                          max_num_neighbors=64)
+        print("row.shape: ", row.shape)
+        edge_index = torch.stack([col, row], dim=0)
+        print("edge_index.shape: ", edge_index.shape)
+        x = self.conv(x, (pos, pos[idx]), edge_index)
+        print("x.shape: ", x.shape)
+
+        pos, batch = pos[idx], batch[idx]
+        return x, pos, batch
+
+
+class GlobalSAModule(torch.nn.Module):
+    def __init__(self, nn):
+        super(GlobalSAModule, self).__init__()
+        self.nn = nn
+
+    def forward(self, x, pos, batch):
+        x = self.nn(torch.cat([x, pos], dim=1))
+        x = global_max_pool(x, batch)
+        pos = pos.new_zeros((x.size(0), 3))
+        batch = torch.arange(x.size(0), device=batch.device)
+        return x, pos, batch
+
+
+def MLP(channels, batch_norm=True):
+    return Seq(*[
+        Seq(Lin(channels[i - 1], channels[i]), ReLU(), BN(channels[i]))
+        for i in range(1, len(channels))
+    ])
+
+
+class PointNet(torch.nn.Module):
+    def __init__(self, output_shape, args):
+        torch.nn.Module.__init__(self)
+
+        self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]))
+        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]))
+        self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
+
+        self.lin1 = Lin(1024, 512)
+        self.lin2 = Lin(512, 256)
+
+        self.lin3  = { key : Lin(256, 10) for key in output_shape }
+    
+
+        for key in self.lin3:
+            self.add_module("lin3_{}".format(key), self.lin3[key])
+
+
+    def forward(self, data):
+        print("entered")
+        sa0_out = (data.x, data.pos, data.batch)
+        print("sa0")
+        print("data.x.shape: ", data.x.shape)
+        print("data.pos.shape: ", data.pos.shape)
+        print("data.batch.shape: ", data.batch.shape)
+        sa1_out = self.sa1_module(*sa0_out)
+        print("sa1")
+        sa2_out = self.sa2_module(*sa1_out)
+        print("sa2")
+        sa3_out = self.sa3_module(*sa2_out)
+        print("sa3")
+        x, pos, batch = sa3_out
+
+        x = torch.functional.relu(self.lin1(x))
+        x = torch.functional.dropout(x, p=0.5, training=self.training)
+        x = torch.functional.relu(self.lin2(x))
+        x = torch.functional.dropout(x, p=0.5, training=self.training)
         
-#         # The input is a point cloud
-#         x = inputs['image']
+        print(x)
 
-#         # We have to determine if this is a network operating on 3D data, or mulitple
-#         # planes of 2D data
+        # x = self.lin3(x)
+        output = {}
+        for key in self.lin3:
+            # Apply the final block:
+            output[key] = self.lin3[key](x)
 
-
-#         # First, apply a transformation net to the input:
-
-#         with tf.variable_scope("input_transformation"):
-#             input_transformation = transform_net(x, 
-#                                                  FLAGS.TRAINING,
-#                                                  name       = "input_transformation",
-#                                                  # mlp_layers = [64, 256, 1024],
-#                                                  use_bias   = FLAGS.USE_BIAS,
-#                                                  batch_norm = FLAGS.BATCH_NORM,
-#                                                  regularize = FLAGS.REGULARIZE_WEIGHTS,)
-
-#             # Do a matrix multiplication to transform the point:
-
-#             # Squeeze out the empty dimension in the point cloud:
-
-#             x = tf.matmul(x, input_transformation)
-
-
-
-#         # Next is a multilayered perceptron to map each point's k-vector to
-#         # a list of 64 points:
-
-#         with tf.variable_scope("first_mlp"):
-
-#             # Use 1D bottleneck convolutions to map k to 64, through a 64 dimension hidden layer
-
-#             x = mlp(x,
-#                     mlp_layers = [64,64],
-#                     is_training= FLAGS.TRAINING, 
-#                     name       = "mlp",
-#                     use_bias   = FLAGS.USE_BIAS,
-#                     batch_norm = FLAGS.BATCH_NORM,
-#                     regularize = FLAGS.REGULARIZE_WEIGHTS,)
-
-#         with tf.variable_scope("feature_transformation"):
-#             feature_transformation = transform_net(x, FLAGS.TRAINING,
-#                                                    name       = "input_transformation",
-#                                                    # mlp_layers = [64, 256, 1024],
-#                                                    use_bias   = FLAGS.USE_BIAS,
-#                                                    batch_norm = FLAGS.BATCH_NORM,
-#                                                    regularize = FLAGS.REGULARIZE_WEIGHTS,)
-#             # Apply the feature transformation:
-#             x = tf.matmul(x, feature_transformation)
-
-
-#         with tf.variable_scope("second_mlp"):
-
-#             x = mlp(x,
-#                     mlp_layers = [64,128, 1024],
-#                     is_training= FLAGS.TRAINING, 
-#                     name       = "mlp",
-#                     use_bias   = FLAGS.USE_BIAS,
-#                     batch_norm = FLAGS.BATCH_NORM,
-#                     regularize = FLAGS.REGULARIZE_WEIGHTS,)
-
-#         # Now, apply the symmetric function (reduce_max) to map to (B, 1024) global features:
-#         x = tf.reduce_max(
-#             input_tensor=x,
-#             axis=1,
-#             name=None,
-#         )
-
-
-#         with tf.variable_scope("classification_mlp"):
-#             for n_hidden in [512, 256, FLAGS.NUM_CLASSES]:
-
-#                 if FLAGS.BATCH_NORM:
-#                     with tf.variable_scope("batch_norm_{}".format(n_hidden)) as scope:
-#                         # updates_collections=None is important here
-#                         # it forces batchnorm parameters to be saved immediately,
-#                         # rather than have to be saved into snapshots manually.
-#                         x = tf.contrib.layers.batch_norm(x,
-#                                                          updates_collections=None,
-#                                                          decay=0.9,
-#                                                          is_training=FLAGS.TRAINING,
-#                                                          trainable=FLAGS.TRAINING,
-#                                                          scope=scope)
-
-#                 x = tf.layers.dense(x, n_hidden, 
-#                                     activation=None,
-#                                     use_bias=FLAGS.USE_BIAS,
-#                                     kernel_regularizer=tf.contrib.layers.l2_regularizer(scale=FLAGS.REGULARIZE_WEIGHTS),
-#                                     trainable=FLAGS.TRAINING,
-#                                     name="dense_{}".format(n_hidden),
-#                                     reuse=None)
-
-#                 # Skip the relu on the final layer:
-#                 if n_hidden != FLAGS.NUM_CLASSES:
-#                     x = tf.nn.relu(x)
-
-#         # To compute the loss, we return not just the logits but also the transormation matrices:
-#         return x, [input_transformation, feature_transformation]
-
-
-
-
-
-
-
-
+        return output

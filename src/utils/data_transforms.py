@@ -169,7 +169,7 @@ def larcvsparse_to_torchgeometric(input_array):
                 ))
 
     # Finally, turn all the graphs into a batch:
-    data.Batch.from_data_list(graph_list)
+    return data.Batch.from_data_list(graph_list)
 
         # X is the index 
 
@@ -252,40 +252,3 @@ def larcvsparse_to_dense_2d(input_array, dense_shape=[1536, 1024]):
 
     return output_array
 
-
-def larcvsparse_to_torchgeometric_3d(input_array):
-    # This format converts the larcv sparse format to
-    # the tuple format required for sparseconvnet
-
-    # First, we can split off the features (which is the pixel value)
-    # and the indexes (which is everythin else)
-    print(input_array.shape)
-
-    n_dims = input_array.shape[-1]
-
-    split_tensors = numpy.split(input_array, n_dims, axis=-1)
-
-
-    # To map out the non_zero locations now is easy:
-    non_zero_inds = numpy.where(split_tensors[-1] != -999)
-
-    # The batch dimension is just the first piece of the non-zero indexes:
-    batch_size  = input_array.shape[0]
-    batch_index = non_zero_inds[0]
-
-    # Getting the voxel values (features) is also straightforward:
-    features = numpy.expand_dims(split_tensors[-1][non_zero_inds],axis=-1)
-
-    # Lastly, we need to stack up the coordinates, which we do here:
-    dimension_list = []
-    for i in range(len(split_tensors) - 1):
-        dimension_list.append(split_tensors[i][non_zero_inds])
-
-    # Tack on the batch index to this list for stacking:
-    dimension_list.append(batch_index)
-
-    # And stack this into one numpy array:
-    dimension = numpy.stack(dimension_list, axis=-1)
-
-    output_array = (dimension, features, batch_size,)
-    return output_array

@@ -14,6 +14,9 @@ sys.path.insert(0,network_dir)
 from src.networks import resnet
 from src.networks import sparseresnet
 from src.networks import sparseresnet3d
+from src.networks import pointnet
+from src.networks import gcn
+from src.networks import dgcnn
 
 
 import argparse
@@ -117,7 +120,9 @@ The most commonly used commands are:
         resnet.ResNetFlags().build_parser(network_parser)
         sparseresnet.ResNetFlags().build_parser(network_parser)
         sparseresnet3d.ResNetFlags().build_parser(network_parser)
-
+        pointnet.PointNetFlags().build_parser(network_parser)
+        gcn.GCNFlags().build_parser(network_parser)
+        dgcnn.DGCNNFlags().build_parser(network_parser)
 
 
     def iotest(self):
