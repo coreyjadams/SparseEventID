@@ -228,10 +228,10 @@ class torch_trainer(iocore):
 
         # Create an optimizer:
         if self.args.optimizer == "SDG":
-            self._opt = torch.optim.SGD(self._net.parameters(),
+            self._opt = torch.optim.SGD(self._net.parameters(), lr = 1.0,
                 weight_decay=self.args.weight_decay)
         else:
-            self._opt = torch.optim.Adam(self._net.parameters(),
+            self._opt = torch.optim.Adam(self._net.parameters(), lr = 1.0,
                 weight_decay=self.args.weight_decay)
 
         self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(self._opt, self.lr_calculator, last_epoch=-1)
