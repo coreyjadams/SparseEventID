@@ -101,7 +101,7 @@ class larcv_fetcher(object):
 
         if self.mode == "inference":
             self._larcv_interface.set_next_index(name, start_index)
-        
+
         while self._larcv_interface.is_reading(name):
             time.sleep(0.1)
 
@@ -135,6 +135,18 @@ class larcv_fetcher(object):
     def fetch_minibatch_dims(self, name):
         return self._larcv_interface.fetch_minibatch_dims(name)
 
+    def output_shape(self, name):
+
+        dims = self.fetch_minibatch_dims(name)
+
+        # This sets up the necessary output shape:
+        if self.label_mode == 'split':
+            output_shape = { key : dims[key] for key in self.keyword_label}
+        else:
+            output_shape = dims[self.keyword_label]
+
+        return output_shape
+
     def fetch_next_batch(self, name, force_pop=False):
 
         metadata=True
@@ -161,8 +173,6 @@ class larcv_fetcher(object):
                 continue
             minibatch_data[key] = numpy.reshape(minibatch_data[key], minibatch_dims[key])
 
-        print("Name: ", name)
-        print(minibatch_data.keys())
         # Strip off the primary/aux label in the keys:
         # if self.mode != 'train':
         #     # Can't do this in a loop due to limitations of python's dictionaries.
@@ -247,8 +257,3 @@ class larcv_fetcher(object):
 
     def write(self, data, producer, entry, event_id):
         self.writer.write(data, datatype='sparse2d', producer=producer, entry=entry, event_id=event_id)
-
-
-
-
-

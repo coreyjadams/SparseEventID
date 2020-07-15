@@ -1,5 +1,4 @@
 import os
-import tempfile
 import sys
 import time
 from collections import OrderedDict
@@ -8,15 +7,15 @@ import numpy
 
 import torch
 
-from . larcvio   import larcv_fetcher
-
 import datetime
+
+from .iocore import iocore
 
 # This uses tensorboardX to save summaries and metrics to tensorboard compatible files.
 
 import tensorboardX
 
-class trainercore(object):
+class torch_trainer(iocore):
     '''
     This class is the core interface for training.  Each function to
     be overridden for a particular interface is marked and raises
@@ -24,83 +23,12 @@ class trainercore(object):
 
     '''
     def __init__(self, args):
-        self.args = args
-        self.larcv_fetcher = larcv_fetcher.larcv_fetcher(
-            mode            = args.mode,
-            distributed     = args.distributed,
-            image_mode      = args.image_mode,
-            label_mode      = self.args.label_mode,
-            input_dimension = self.args.input_dimension,
-        )
+        iocore.__init__(self, args)
 
         # self.larcv_fetcher = threadloader.thread_interface()
-        self._iteration       = 0
-        self._global_step     = -1
+        self._iteration       = 0.
+        self._global_step     = -1.
 
-
-
-    def print(self, *argv):
-        ''' Function for logging as needed.  Works correctly in distributed mode'''
-
-        message = " ".join([ str(s) for s in argv] )
-
-        sys.stdout.write(message + "\n")
-        sys.stdout.flush()
-
-
-    def _initialize_io(self, color=0):
-
-        # Prepare the training sample:
-        self._train_data_size = self.larcv_fetcher.prepare_sample(
-            name            = "primary",
-            input_file      = self.args.file,
-            batch_size      = self.args.minibatch_size,
-            color           = color
-        )
-
-        # Check that the training file exists:
-        if not self.args.aux_file.exists():
-            if self.args.mode == "train":
-                self.print("WARNING: Aux file does not exist.  Setting to None for training")
-                self.args.aux_file = None
-            else:
-                # In inference mode, we are creating the aux file.  So we need to check
-                # that the directory exists.  Otherwise, no writing.
-                if not self.args.aux_file.parent.exists():
-                    self.print("WARNING: Aux file's directory does not exist, skipping.")
-                    self.args.aux_file = None
-                elif self.args.aux_file is None or str(self.args.aux_file).lower() == "none":
-                    self.print("WARNING: no aux file set, so not writing inference results.")
-                    self.args.aux_file = None
-
-
-        if self.args.aux_file is not None:
-            if self.args.mode == "train":
-                # Fetching data for on the fly testing:
-                self._aux_data_size = self.larcv_fetcher.prepare_sample(
-                    name            = "aux",
-                    input_file      = self.args.aux_file,
-                    batch_size      = self.args.minibatch_size,
-                    color           = color
-                )
-            elif self.args.mode == "inference":
-                raise Exception("Need to check the inference writer works")
-                self._aux_data_size = self.larcv_fetcher.prepare_writer(
-                    input_file = self.args.file, output_file = str(self.args.aux_file))
-
-
-        # if 'output_file' in self.args and self.args.output_file is not None:
-        #     if not self.args.training:
-        #         config = io_templates.output_io(input_file=self.args.file, output_file=self.args.output_file)
-
-        #         out_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
-        #         out_file.write(config.generate_config_str())
-        #         print(config.generate_config_str())
-
-        #         out_file.close()
-        #         self._cleanup.append(out_file)
-
-        #         self.larcv_fetcher.prepare_writer(io_config=out_file.name, input_files=self.args.file, output_file=self.args.output_file)
 
 
 
@@ -142,12 +70,110 @@ class trainercore(object):
         if self.args.training:
             self._net.train(True)
 
+
+    def build_lr_schedule(self, learning_rate_schedule = None):
+        # Define the learning rate sequence:
+
+        if learning_rate_schedule is None:
+            learning_rate_schedule = {
+                'warm_up' : {
+                    'function'      : 'linear',
+                    'start'         : 0,
+                    'n_epochs'      : 1,
+                    'initial_rate'  : 0.00001,
+                },
+                'flat' : {
+                    'function'      : 'flat',
+                    'start'         : 1,
+                    'n_epochs'      : 20,
+                },
+                'decay' : {
+                    'function'      : 'decay',
+                    'start'         : 21,
+                    'n_epochs'      : 4,
+                    'floor'         : 0.00001,
+                    'decay_rate'    : 0.999
+                },
+            }
+
+        # one_cycle_schedule = {
+        #     'ramp_up' : {
+        #         'function'      : 'linear',
+        #         'start'         : 0,
+        #         'n_epochs'      : 10,
+        #         'initial_rate'  : 0.00001,
+        #         'final_rate'    : 0.001,
+        #     },
+        #     'ramp_down' : {
+        #         'function'      : 'linear',
+        #         'start'         : 10,
+        #         'n_epochs'      : 10,
+        #         'initial_rate'  : 0.001,
+        #         'final_rate'    : 0.00001,
+        #     },
+        #     'decay' : {
+        #         'function'      : 'decay',
+        #         'start'         : 20,
+        #         'n_epochs'      : 5,
+        #         'rate'          : 0.00001
+        #         'floor'         : 0.00001,
+        #         'decay_rate'    : 0.99
+        #     },
+        # }
+        # learning_rate_schedule = one_cycle_schedule
+
+        # We build up the functions we need piecewise:
+        func_list = []
+        cond_list = []
+
+        for i, key in enumerate(learning_rate_schedule):
+
+            # First, create the condition for this stage
+            start    = learning_rate_schedule[key]['start']
+            length   = learning_rate_schedule[key]['n_epochs']
+
+            if i +1 == len(learning_rate_schedule):
+                # Make sure the condition is open ended if this is the last stage
+                condition = lambda x, s=start, l=length: x >= s
+            else:
+                # otherwise bounded
+                condition = lambda x, s=start, l=length: x >= s and x < s + l
+
+
+            if learning_rate_schedule[key]['function'] == 'linear':
+
+                initial_rate = learning_rate_schedule[key]['initial_rate']
+                if 'final_rate' in learning_rate_schedule[key]: final_rate = learning_rate_schedule[key]['final_rate']
+                else: final_rate = self.args.learning_rate
+
+                function = lambda x, s=start, l=length, i=initial_rate, f=final_rate : numpy.interp(x, [s, s + l] ,[i, f] )
+
+            elif learning_rate_schedule[key]['function'] == 'flat':
+                if 'rate' in learning_rate_schedule[key]: rate = learning_rate_schedule[key]['rate']
+                else: rate = self.args.learning_rate
+
+                function = lambda x : rate
+
+            elif learning_rate_schedule[key]['function'] == 'decay':
+                decay    = learning_rate_schedule[key]['decay_rate']
+                floor    = learning_rate_schedule[key]['floor']
+                if 'rate' in learning_rate_schedule[key]: rate = learning_rate_schedule[key]['rate']
+                else: rate = self.args.learning_rate
+
+                function = lambda x, s=start, d=decay, f=floor: (rate-f) * numpy.exp( -(d * (x - s))) + f
+
+            cond_list.append(condition)
+            func_list.append(function)
+
+        self.lr_calculator = lambda x: numpy.piecewise(
+            x * (self.args.minibatch_size / self._train_data_size),
+            [c(x * (self.args.minibatch_size / self._train_data_size)) for c in cond_list], func_list)
+
+
     def initialize(self, io_only=False):
 
 
-
-        self._initialize_io()
-
+        iocore.initialize(self, io_only)
 
         if io_only:
             return
@@ -198,14 +224,17 @@ class trainercore(object):
 
     def init_optimizer(self):
 
+        self.build_lr_schedule()
+
         # Create an optimizer:
         if self.args.optimizer == "SDG":
-            self._opt = torch.optim.SGD(self._net.parameters(), lr=self.args.learning_rate,
+            self._opt = torch.optim.SGD(self._net.parameters(),
                 weight_decay=self.args.weight_decay)
         else:
-            self._opt = torch.optim.Adam(self._net.parameters(), lr=self.args.learning_rate,
+            self._opt = torch.optim.Adam(self._net.parameters(),
                 weight_decay=self.args.weight_decay)
 
+        self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(self._opt, self.lr_calculator, last_epoch=-1)
 
 
 
@@ -245,146 +274,6 @@ class trainercore(object):
                 self._criterion[key] = torch.nn.CrossEntropyLoss(weight=self._label_weights[key])
 
 
-    def init_saver(self):
-
-        # This sets up the summary saver:
-        if self.args.training:
-            self._saver = tensorboardX.SummaryWriter(self.args.log_directory)
-
-        if self.args.aux_file is not None and self.args.training:
-            self._aux_saver = tensorboardX.SummaryWriter(self.args.log_directory + "/test/")
-        elif self.args.aux_file is not None and not self.args.training:
-            self._aux_saver = tensorboardX.SummaryWriter(self.args.log_directory + "/val/")
-
-        else:
-            self._aux_saver = None
-        # This code is supposed to add the graph definition.
-        # It doesn't currently work
-        # temp_dims = list(dims['image'])
-        # temp_dims[0] = 1
-        # dummy_input = torch.randn(size=tuple(temp_dims), requires_grad=True)
-        # self._saver.add_graph(self._net, (dummy_input,))
-
-        # Here, either restore the weights of the network or initialize it:
-
-
-    def restore_model(self):
-        ''' This function attempts to restore the model from file
-        '''
-
-        _, checkpoint_file_path = self.get_model_filepath()
-
-        self.print(checkpoint_file_path)
-
-        if not os.path.isfile(checkpoint_file_path):
-            self.print("Returning none!")
-            return None
-        # Parse the checkpoint file and use that to get the latest file path
-
-        with open(checkpoint_file_path, 'r') as _ckp:
-            for line in _ckp.readlines():
-                if line.startswith("latest: "):
-                    chkp_file = line.replace("latest: ", "").rstrip('\n')
-                    chkp_file = os.path.dirname(checkpoint_file_path) + "/" + chkp_file
-                    self.print("Restoring weights from ", chkp_file)
-                    break
-
-        if self.args.compute_mode == "CPU":
-            state = torch.load(chkp_file, map_location='cpu')
-        else:
-            state = torch.load(chkp_file)
-
-        return state
-
-    def load_state(self, state):
-
-
-        self._net.load_state_dict(state['state_dict'])
-        self._opt.load_state_dict(state['optimizer'])
-        self._global_step = state['global_step']
-
-        # If using GPUs, move the model to GPU:
-        if self.args.compute_mode == "GPU":
-            for state in self._opt.state.values():
-                for k, v in state.items():
-                    if torch.is_tensor(v):
-                        state[k] = v.cuda()
-
-        return True
-
-
-    def save_model(self):
-        '''Save the model to file
-
-        '''
-
-        current_file_path, checkpoint_file_path = self.get_model_filepath()
-
-        # save the model state into the file path:
-        state_dict = {
-            'global_step' : self._global_step,
-            'state_dict'  : self._net.state_dict(),
-            'optimizer'   : self._opt.state_dict(),
-        }
-
-        # Make sure the path actually exists:
-        if not os.path.isdir(os.path.dirname(current_file_path)):
-            os.makedirs(os.path.dirname(current_file_path))
-
-        torch.save(state_dict, current_file_path)
-
-        # Parse the checkpoint file to see what the last checkpoints were:
-
-        # Keep only the last 5 checkpoints
-        n_keep = 100
-
-
-        past_checkpoint_files = {}
-        try:
-            with open(checkpoint_file_path, 'r') as _chkpt:
-                for line in _chkpt.readlines():
-                    line = line.rstrip('\n')
-                    vals = line.split(":")
-                    if vals[0] != 'latest':
-                        past_checkpoint_files.update({int(vals[0]) : vals[1].replace(' ', '')})
-        except:
-            pass
-
-
-        # Remove the oldest checkpoints while the number is greater than n_keep
-        while len(past_checkpoint_files) >= n_keep:
-            min_index = min(past_checkpoint_files.keys())
-            file_to_remove = os.path.dirname(checkpoint_file_path) + "/" + past_checkpoint_files[min_index]
-            os.remove(file_to_remove)
-            past_checkpoint_files.pop(min_index)
-
-
-
-        # Update the checkpoint file
-        with open(checkpoint_file_path, 'w') as _chkpt:
-            _chkpt.write('latest: {}\n'.format(os.path.basename(current_file_path)))
-            _chkpt.write('{}: {}\n'.format(self._global_step, os.path.basename(current_file_path)))
-            for key in past_checkpoint_files:
-                _chkpt.write('{}: {}\n'.format(key, past_checkpoint_files[key]))
-
-
-    def get_model_filepath(self):
-        '''Helper function to build the filepath of a model for saving and restoring:
-
-
-        '''
-
-        # Find the base path of the log directory
-        if self.args.checkpoint_directory == None:
-            file_path= self.args.log_directory  + "/checkpoints/"
-        else:
-            file_path= self.args.checkpoint_directory  + "/checkpoints/"
-
-
-        name = file_path + 'model-{}.ckpt'.format(self._global_step)
-        checkpoint_file_path = file_path + "checkpoint"
-
-        return name, checkpoint_file_path
 
     def _calculate_loss(self, inputs, logits):
         ''' Calculate the loss.
@@ -474,68 +363,6 @@ class trainercore(object):
                 metrics['acc/{}'.format(key)] = accuracy[key]
 
         return metrics
-
-    def log(self, metrics, saver=''):
-
-
-        if self._global_step % self.args.logging_iteration == 0:
-
-            self._current_log_time = datetime.datetime.now()
-
-            s = ""
-
-            if 'it.' in metrics:
-                # This prints out the iteration for ana steps
-                s += "it.: {}, ".format(metrics['it.'])
-
-            # Build up a string for logging:
-            if self._log_keys != []:
-                s += ", ".join(["{0}: {1:.3}".format(key, metrics[key]) for key in self._log_keys])
-            else:
-                s += ", ".join(["{0}: {1:.3}".format(key, metrics[key]) for key in metrics])
-
-
-            try:
-                s += " ({:.2}s / {:.2} IOs / {:.2})".format(
-                    (self._current_log_time - self._previous_log_time).total_seconds(),
-                    metrics['io_fetch_time'],
-                    metrics['step_time'])
-            except:
-                pass
-
-            try:
-                s += " (LR: {:.4})".format(
-                    self._opt.state_dict()['param_groups'][0]['lr'])
-            except:
-                pass
-
-            self._previous_log_time = self._current_log_time
-
-            self.print("{} Step {} metrics: {}".format(saver, self._global_step, s))
-
-
-
-    def summary(self, metrics,saver=""):
-
-        if self._saver is None:
-            return
-
-        if self._global_step % self.args.summary_iteration == 0:
-            for metric in metrics:
-                name = metric
-                if saver == "test":
-                    self._aux_saver.add_scalar(metric, metrics[metric], self._global_step)
-                else:
-                    self._saver.add_scalar(metric, metrics[metric], self._global_step)
-
-
-            # try to get the learning rate
-            # self.print self._lr_scheduler.get_lr()
-            if saver == "test":
-                self._aux_saver.add_scalar("learning_rate", self._opt.state_dict()['param_groups'][0]['lr'], self._global_step)
-            else:
-                self._saver.add_scalar("learning_rate", self._opt.state_dict()['param_groups'][0]['lr'], self._global_step)
-            pass
 
 
     def increment_global_step(self):
@@ -644,6 +471,8 @@ class trainercore(object):
         step_start_time = datetime.datetime.now()
         # Apply the parameter update:
         self._opt.step()
+        self.lr_scheduler.step()
+
         # print("Updated Weights")
         global_end_time = datetime.datetime.now()
 
@@ -715,66 +544,6 @@ class trainercore(object):
                 self.summary(metrics, saver="test")
 
                 return metrics
-
-    def ana_step(self, iteration=None):
-
-        if self.args.training: return
-
-        # Set network to eval mode
-        self._net.eval()
-
-        # Fetch the next batch of data with larcv
-        minibatch_data = self.fetch_next_batch(metadata=True)
-
-        # Convert the input data to torch tensors
-        minibatch_data = self.to_torch(minibatch_data)
-
-        # Run a forward pass of the model on the input image:
-        with torch.no_grad():
-            logits = self._net(minibatch_data['image'])
-
-
-        if self.args.label_mode == 'all':
-            softmax = torch.nn.Softmax(dim=-1)(logits)
-        else:
-            softmax = { key : torch.nn.Softmax(dim=-1)(logits[key]) for key in logits }
-
-        # Call the larcv interface to write data:
-        if self.args.output_file is not None:
-            if self.args.label_mode == 'all':
-                writable_logits = numpy.asarray(softmax.cpu())
-                self.larcv_fetcher.write_output(data=writable_logits[0], datatype='meta', producer='all',
-                    entries=minibatch_data['entries'], event_ids=minibatch_data['event_ids'])
-            else:
-                for entry in range(self.args.minibatch_size):
-                    if iteration > 1 and minibatch_data['entries'][entry] == 0:
-                        self.print ('Reached max number of entries.')
-                        break
-                    this_entry = [minibatch_data['entries'][entry]]
-                    this_event_id = [minibatch_data['event_ids'][entry]]
-                    for key in softmax:
-                        writable_logits = numpy.asarray(softmax[key].cpu())[entry]
-                        self.larcv_fetcher.write_output(data=writable_logits, datatype='tensor1d', producer=key,
-                            entries=this_entry, event_ids=this_event_id)
-
-        # If the input data has labels available, compute the metrics:
-        if (self.args.label_mode == 'all' and 'label' in minibatch_data) or \
-           (self.args.label_mode == 'split' and 'label_neut' in minibatch_data):
-            # Compute the loss
-            loss = self._calculate_loss(minibatch_data, logits)
-
-            # Compute the metrics for this iteration:
-            metrics = self._compute_metrics(logits, minibatch_data, loss)
-
-            if iteration is not None:
-                metrics.update({'it.' : iteration})
-
-
-            self.log(metrics, saver="ana")
-            # self.summary(metrics, saver="test")
-
-            return metrics
-
 
     def stop(self):
         # Mostly, this is just turning off the io:
