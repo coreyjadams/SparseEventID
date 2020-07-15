@@ -4,7 +4,9 @@ from . import larcv_io
 
 # Here, we set up a bunch of template IO formats in the form of callable functions:
 
-def train_io(input_file, image_dim, label_mode, prepend_names=""):
+# These are all doing sparse IO, so there is no dense IO template here.  But you could add it.
+
+def dataset_io(name, input_file, image_dim, label_mode, prepend_names="", RandomAccess=None):
     if image_dim == 2:
         max_voxels = 20000
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
@@ -15,38 +17,17 @@ def train_io(input_file, image_dim, label_mode, prepend_names=""):
     label_proc = gen_label_filler(label_mode, prepend_names)
 
 
-    config = larcv_io.ThreadIOConfig(name="TrainIO")
+    config = larcv_io.ThreadIOConfig(name=name)
 
     config.add_process(data_proc)
     for l in label_proc:
         config.add_process(l)
 
     config.set_param("InputFiles", input_file)
+    if RandomAccess is not None:
+        config.set_param("RandomAccess", RandomAccess)
 
     return config
-
-
-def test_io(input_file, image_dim, label_mode, prepend_names="aux_"):
-    if image_dim == 2:
-        max_voxels = 20000
-        data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
-    else:
-        max_voxels = 16000
-        data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
-
-    label_proc = gen_label_filler(label_mode, prepend_names)
-
-
-    config = larcv_io.ThreadIOConfig(name="TestIO")
-
-    config.add_process(data_proc)
-    for l in label_proc:
-        config.add_process(l)
-
-    config.set_param("InputFiles", input_file)
-
-    return config
-
 
 def ana_io(input_file, image_dim, label_mode, prepend_names=""):
     if image_dim == 2:
@@ -152,9 +133,4 @@ def gen_label_filler(label_mode, prepend_names):
 
             procs.append(proc)
         return procs
-
-
-
-
-
 

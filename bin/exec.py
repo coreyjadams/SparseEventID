@@ -2,6 +2,8 @@
 import os,sys,signal
 import time
 
+import pathlib
+
 import numpy
 
 # Add the local folder to the import path:
@@ -14,9 +16,9 @@ sys.path.insert(0,network_dir)
 from src.networks import resnet
 from src.networks import sparseresnet
 from src.networks import sparseresnet3d
-from src.networks import pointnet
-from src.networks import gcn
-from src.networks import dgcnn
+# from src.networks import pointnet
+# from src.networks import gcn
+# from src.networks import dgcnn
 
 
 import argparse
@@ -98,7 +100,7 @@ The most commonly used commands are:
 
         self.args = self.parser.parse_args(sys.argv[2:])
         self.args.training = True
-
+        self.args.mode = "train"
 
         self.make_trainer()
 
@@ -120,9 +122,9 @@ The most commonly used commands are:
         resnet.ResNetFlags().build_parser(network_parser)
         sparseresnet.ResNetFlags().build_parser(network_parser)
         sparseresnet3d.ResNetFlags().build_parser(network_parser)
-        pointnet.PointNetFlags().build_parser(network_parser)
-        gcn.GCNFlags().build_parser(network_parser)
-        dgcnn.DGCNNFlags().build_parser(network_parser)
+        # pointnet.PointNetFlags().build_parser(network_parser)
+        # gcn.GCNFlags().build_parser(network_parser)
+        # dgcnn.DGCNNFlags().build_parser(network_parser)
 
 
     def iotest(self):
@@ -136,30 +138,27 @@ The most commonly used commands are:
         # TWO argvs, ie the command (exec.py) and the subcommand (iotest)
         self.args = self.parser.parse_args(sys.argv[2:])
         self.args.training = False
-        print("Running IO Test")
-        print(self.__str__())
-
+        self.args.mode = "iotest"
+        
         self.make_trainer()
+        
+        self.trainer.print("Running IO Test")
+        self.trainer.print(self.__str__())
+
 
         self.trainer.initialize(io_only=True)
 
-        # label_stats = numpy.zeros((36,))
-
+        global_start = time.time()
         time.sleep(0.1)
         for i in range(self.args.iterations):
             start = time.time()
-            mb = self.trainer.fetch_next_batch()
-            # print(mb.keys())
-            # label_stats += numpy.sum(mb['label'], axis=0)
+            mb = self.trainer.larcv_fetcher.fetch_next_batch("primary", force_pop=True)
 
             end = time.time()
-            if not self.args.distributed:
-                print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
-            else:
-                if self.trainer._rank == 0:
-                    print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
-            # time.sleep(0.5)
-        # print(label_stats)
+
+            self.trainer.print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
+
+        self.trainer.print("Total IO Time: ", time.time() - global_start)
 
     def make_trainer(self):
 
@@ -230,8 +229,8 @@ The most commonly used commands are:
 
         # IO PARAMETERS FOR INPUT:
         parser.add_argument('-f','--file', 
-            type    = str, 
-            default = "/lus/theta-fs0/projects/datascience/cadams/wire_pixel_preprocessed_files_split/train_event_id.root",
+            type    = pathlib.Path, 
+            default = "/not/a/file",
             help    = "IO Input File")
         parser.add_argument('--input-dimension', 
             type    = int, 
@@ -256,8 +255,8 @@ The most commonly used commands are:
         
         # IO PARAMETERS FOR AUX INPUT:
         parser.add_argument('--aux-file', 
-            type    = str, 
-            default = None,
+            type    = pathlib.Path, 
+            default = "/not/a/file",
             help    = "IO Aux Input File, or output file in inference mode")
 
 

@@ -8,12 +8,7 @@ import numpy
 
 import torch
 
-from larcv import queueloader
-#from larcv import threadloader
-
-from . import data_transforms
-from . import io_templates
-
+from . larcvio   import larcv_fetcher
 
 import datetime
 
@@ -30,150 +25,89 @@ class trainercore(object):
     '''
     def __init__(self, args):
         self.args = args
-        if not self.args.training:
-            self._larcv_interface = queueloader.queue_interface(random_access_mode="serial_access")
-        else:
-            self._larcv_interface = queueloader.queue_interface(random_access_mode="random_blocks")
+        self.larcv_fetcher = larcv_fetcher.larcv_fetcher(
+            mode            = args.mode,
+            distributed     = args.distributed,
+            image_mode      = args.image_mode,
+            label_mode      = self.args.label_mode,
+            input_dimension = self.args.input_dimension,
+        )
+
         # self._larcv_interface = threadloader.thread_interface()
         self._iteration       = 0
         self._global_step     = -1
 
-        self._cleanup         = []
 
-    def __del__(self):
-        for f in self._cleanup:
-            os.unlink(f.name)
+
+    def print(self, *argv):
+        ''' Function for logging as needed.  Works correctly in distributed mode'''
+
+        message = " ".join([ str(s) for s in argv] )
+
+        sys.stdout.write(message + "\n")
+        sys.stdout.flush()
 
 
     def _initialize_io(self, color=0):
 
-        # First, verify the files exist:
-        if not os.path.exists(self.args.file):
-            raise Exception(f"File {self.args.file} not found")
+        # Prepare the training sample:
+        self._train_data_size = self.larcv_fetcher.prepare_sample(
+            name            = "primary", 
+            input_file      = self.args.file, 
+            batch_size      = self.args.minibatch_size, 
+            color           = color
+        )
 
-        # Use the templates to generate a configuration string, which we store into a temporary file
-        if self.args.training:
-            config = io_templates.train_io(input_file=self.args.file, image_dim=self.args.input_dimension,
-                label_mode=self.args.label_mode)
-        else:
-            config = io_templates.ana_io(input_file=self.args.file, image_dim=self.args.input_dimension,
-                label_mode=self.args.label_mode)
-
-
-        # Generate a named temp file:
-        main_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
-        main_file.write(config.generate_config_str())
-
-        main_file.close()
-        self._cleanup.append(main_file)
-
-        # Prepare data managers:
-        io_config = {
-            'filler_name' : config._name,
-            'filler_cfg'  : main_file.name,
-            'verbosity'   : 5,
-            'make_copy'   : True
-        }
-
-        # Build up the data_keys:
-        data_keys = OrderedDict()
-        data_keys['image'] = 'data'
-        for proc in config._process_list._processes:
-            if proc._name == 'data':
-                continue
+        # Check that the training file exists:
+        if not self.args.aux_file.exists():
+            if self.args.mode == "train":
+                self.print("WARNING: Aux file does not exist.  Setting to None for training")
+                self.args.aux_file = None
             else:
-                data_keys[proc._name] = proc._name
-
-        # Assign the keywords here:
-        if self.args.label_mode == 'all':
-            self.args.keyword_label = 'label'
-        else:
-            self.args.keyword_label = []
-            for key in data_keys.keys():
-                if key != 'image':
-                    self.args.keyword_label.append(key)
+                # In inference mode, we are creating the aux file.  So we need to check
+                # that the directory exists.  Otherwise, no writing.
+                if not self.args.aux_file.parent.exists():
+                    self.print("WARNING: Aux file's directory does not exist, skipping.")
+                    self.args.aux_file = None
+                elif self.args.aux_file is None or str(self.args.aux_file).lower() == "none":
+                    self.print("WARNING: no aux file set, so not writing inference results.")
+                    self.args.aux_file = None
 
 
-
-        if self.args.distributed:
-            self._larcv_interface.prepare_manager(mode='primary',
-                                                  io_config=io_config,
-                                                  minibatch_size=self.args.minibatch_size,
-                                                  data_keys=data_keys,
-                                                  # files=self.args.file,
-                                                  random_access_mode="random_blocks",
-                                                  read_option="read_from_all_ranks_mpi")
-        else:
-            self._larcv_interface.prepare_manager(mode      = 'primary',
-                                                  io_config = io_config,
-                                                  minibatch_size = self.args.minibatch_size,
-                                                  data_keys = data_keys )
-
-
-        if not self.args.training:
-            self._larcv_interface.set_next_index('primary', self.args.start_index)
-
-        # All of the additional tools are in case there is a test set up:
         if self.args.aux_file is not None:
+            if self.args.mode == "train":
+                # Fetching data for on the fly testing:
+                self._aux_data_size = self.larcv_fetcher.prepare_sample(
+                    name            = "aux",
+                    input_file      = self.args.aux_file, 
+                    batch_size      = self.args.minibatch_size, 
+                    color           = color
+                )
+            elif self.args.mode == "inference":
+                raise Exception("Need to check the inference writer works")
+                self._aux_data_size = self.larcv_fetcher.prepare_writer(
+                    input_file = self.args.file, output_file = str(self.args.aux_file))
 
 
-            if self.args.training:
-                config = io_templates.test_io(input_file=self.args.aux_file, image_dim=self.args.input_dimension,
-                    label_mode=self.args.label_mode)
+        # if 'output_file' in self.args and self.args.output_file is not None:
+        #     if not self.args.training:
+        #         config = io_templates.output_io(input_file=self.args.file, output_file=self.args.output_file)
 
-                # Generate a named temp file:
-                aux_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
-                aux_file.write(config.generate_config_str())
-                # print([proc._name for proc in config._process_list._processes])
+        #         out_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+        #         out_file.write(config.generate_config_str())
+        #         print(config.generate_config_str())
 
-                aux_file.close()
-                self._cleanup.append(aux_file)
-                io_config = {
-                    'filler_name' : config._name,
-                    'filler_cfg'  : aux_file.name,
-                    'verbosity'   : 5,
-                    'make_copy'   : True
-                }
+        #         out_file.close()
+        #         self._cleanup.append(out_file)
 
-                # Build up the data_keys:
-                data_keys = OrderedDict()
-                data_keys['image'] = 'aux_data'
-                for proc in config._process_list._processes:
-                    if proc._name == 'aux_data':
-                        continue
-                    else:
-                        data_keys[proc._name] = proc._name
-
-
-                if self.args.distributed:
-                    self._larcv_interface.prepare_manager(mode='aux',
-                                                          io_config=io_config,
-                                                          minibatch_size=self.args.aux_minibatch_size,
-                                                          data_keys=data_keys,
-                                                          # files=self.args.aux_file,
-                                                          random_access_mode="serial_access",
-                                                          read_option="read_from_all_ranks_mpi")
-                else:
-                    self._larcv_interface.prepare_manager('aux', io_config, self.args.aux_minibatch_size, data_keys, files=self.args.aux_file)
-
-        if 'output_file' in self.args and self.args.output_file is not None:
-            if not self.args.training:
-                config = io_templates.output_io(input_file=self.args.file, output_file=self.args.output_file)
-
-                out_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
-                out_file.write(config.generate_config_str())
-                print(config.generate_config_str())
-
-                out_file.close()
-                self._cleanup.append(out_file)
-
-                self._larcv_interface.prepare_writer(io_config=out_file.name, input_files=self.args.file, output_file=self.args.output_file)
+        #         self._larcv_interface.prepare_writer(io_config=out_file.name, input_files=self.args.file, output_file=self.args.output_file)
 
 
 
     def init_network(self):
 
-        dims = self._larcv_interface.fetch_minibatch_dims('primary')
+
+        dims = self.larcv_fetcher.fetch_minibatch_dims('primary')
 
         # This sets up the necessary output shape:
         if self.args.label_mode == 'split':
@@ -227,7 +161,7 @@ class trainercore(object):
         n_trainable_parameters = 0
         for var in self._net.parameters():
             n_trainable_parameters += numpy.prod(var.shape)
-        print("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
+        self.print("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
 
         self.init_optimizer()
 
@@ -258,7 +192,7 @@ class trainercore(object):
         # Convert the input data to torch tensors
         if self.args.compute_mode == "GPU":
             device = torch.device('cuda')
-            # print(device)
+            # self.print(device)
         else:
             device = torch.device('cpu')
 
@@ -308,7 +242,7 @@ class trainercore(object):
             for key in self._label_weights:
                 weights = torch.sum(self._label_weights[key]) / self._label_weights[key]
                 self._label_weights[key] = weights / torch.sum(weights)
-                print ('Weights for', key, '=', self._label_weights[key])
+                self.print ('Weights for', key, '=', self._label_weights[key])
 
             for key in self._label_weights:
                 self._criterion[key] = torch.nn.CrossEntropyLoss(weight=self._label_weights[key])
@@ -343,10 +277,10 @@ class trainercore(object):
 
         _, checkpoint_file_path = self.get_model_filepath()
 
-        print(checkpoint_file_path)
+        self.print(checkpoint_file_path)
 
         if not os.path.isfile(checkpoint_file_path):
-            print("Returning none!")
+            self.print("Returning none!")
             return None
         # Parse the checkpoint file and use that to get the latest file path
 
@@ -355,7 +289,7 @@ class trainercore(object):
                 if line.startswith("latest: "):
                     chkp_file = line.replace("latest: ", "").rstrip('\n')
                     chkp_file = os.path.dirname(checkpoint_file_path) + "/" + chkp_file
-                    print("Restoring weights from ", chkp_file)
+                    self.print("Restoring weights from ", chkp_file)
                     break
 
         if self.args.compute_mode == "CPU":
@@ -489,11 +423,11 @@ class trainercore(object):
                 values, target = torch.max(inputs[key], dim=1)
 
                 temp_loss = self._criterion[key](logits[key], target=target)
-                # print(temp_loss.shape)
+                # self.print(temp_loss.shape)
                 # temp_loss *= self._label_weights[key]
-                # print(temp_loss.shape)
+                # self.print(temp_loss.shape)
                 # temp_loss = torch.sum(temp_loss)
-                # print(temp_loss.shape)
+                # self.print(temp_loss.shape)
 
                 if loss is None:
                     loss = temp_loss
@@ -580,7 +514,7 @@ class trainercore(object):
 
             self._previous_log_time = self._current_log_time
 
-            print("{} Step {} metrics: {}".format(saver, self._global_step, s))
+            self.print("{} Step {} metrics: {}".format(saver, self._global_step, s))
 
 
 
@@ -599,56 +533,13 @@ class trainercore(object):
 
 
             # try to get the learning rate
-            # print self._lr_scheduler.get_lr()
+            # self.print self._lr_scheduler.get_lr()
             if saver == "test":
                 self._aux_saver.add_scalar("learning_rate", self._opt.state_dict()['param_groups'][0]['lr'], self._global_step)
             else:
                 self._saver.add_scalar("learning_rate", self._opt.state_dict()['param_groups'][0]['lr'], self._global_step)
             pass
 
-    def fetch_next_batch(self, mode='primary', metadata=False):
-
-        # For the serial mode, call next here:
-        self._larcv_interface.prepare_next(mode)
-
-        minibatch_data = self._larcv_interface.fetch_minibatch_data(mode, pop=True, fetch_meta_data=metadata)
-        minibatch_dims = self._larcv_interface.fetch_minibatch_dims(mode)
-
-
-        for key in minibatch_data:
-            if key == 'entries' or key == 'event_ids':
-                continue
-            minibatch_data[key] = numpy.reshape(minibatch_data[key], minibatch_dims[key])
-
-        # Strip off the primary/aux label in the keys:
-        if mode != 'primary':
-            # Can't do this in a loop due to limitations of python's dictionaries.
-            minibatch_data["label_cpi"]  = minibatch_data.pop("aux_label_cpi")
-            minibatch_data["label_npi"]  = minibatch_data.pop("aux_label_npi")
-            minibatch_data["label_prot"] = minibatch_data.pop("aux_label_prot")
-            minibatch_data["label_neut"] = minibatch_data.pop("aux_label_neut")
-
-
-        # Here, do some massaging to convert the input data to another format, if necessary:
-        if self.args.image_mode == 'dense':
-            # Need to convert sparse larcv into a dense numpy array:
-            if self.args.input_dimension == 3:
-                minibatch_data['image'] = data_transforms.larcvsparse_to_dense_3d(minibatch_data['image'])
-            else:
-                minibatch_data['image'] = data_transforms.larcvsparse_to_dense_2d(minibatch_data['image'])
-        elif self.args.image_mode == 'sparse':
-            # Have to convert the input image from dense to sparse format:
-            if self.args.input_dimension == 3:
-                minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_3d(minibatch_data['image'])
-            else:
-                minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_2d(minibatch_data['image'])
-        elif self.args.image_mode == 'graph':
-            minibatch_data['image'] = data_transforms.larcvsparse_to_torchgeometric(minibatch_data['image'])
-            pass
-        else:
-            raise Exception("Image Mode not recognized")
-
-        return minibatch_data
 
     def increment_global_step(self):
 
@@ -890,8 +781,9 @@ class trainercore(object):
 
     def stop(self):
         # Mostly, this is just turning off the io:
-        self._larcv_interface.stop()
-
+        # self._larcv_interface.stop()
+        pass
+        
     def checkpoint(self):
 
         if self.args.checkpoint_iteration == -1:
