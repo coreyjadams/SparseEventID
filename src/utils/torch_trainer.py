@@ -568,7 +568,7 @@ class torch_trainer(iocore):
                 self.args.iterations = int(self._train_data_size/self.args.minibatch_size) + 1
                 self.print('Number of iterations set to', self.args.iterations)
 
-
+        start = time.time()
         # Run iterations
         for i in range(self.args.iterations):
             if self.args.training and self._iteration >= self.args.iterations:
@@ -583,6 +583,7 @@ class torch_trainer(iocore):
             else:
                 self.ana_step(i)
 
+        self.print("Total time to batch process: ", time.time() - start)
 
         if self.args.training:
             if self._saver is not None:
