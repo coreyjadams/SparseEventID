@@ -187,7 +187,7 @@ def larcvsparse_to_pointcloud3d(input_array):
         y_coords   = input_array[i,:,1]
         z_coords   = input_array[i,:,2]
         val_coords = input_array[i,:,3]
-        voxel_index = numpy.where(val_coords >= 0.)
+        voxel_index = numpy.where(val_coords != -999)
         values  = val_coords[voxel_index]
         x_values = x_coords[voxel_index]
         y_values = y_coords[voxel_index]
