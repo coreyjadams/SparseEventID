@@ -1,7 +1,9 @@
 import numpy
+import torch
+from torch_geometric.data import Data
 
 '''
-This is a torch-free file that exists to massage data
+This is a not torch-free file that exists to massage data
 From sparse to dense or dense to sparse, etc.
 
 This can also convert from sparse to sparse to rearrange formats
@@ -171,3 +173,29 @@ def larcvsparse_to_dense_3d(input_array, dense_shape):
     output_array[batch_index, 0, x_index, y_index, z_index] = values
 
     return output_array
+
+
+def larcvsparse_to_pointcloud3d(input_array):
+    
+     # This function iterates over each batch to create a pointcloud from each batch sample
+     # Each point cloud will generate a torch-geometric Data object using the Data() class 
+     # The point clouds are appended to a data list which can be input to a Batch.from_data_list object 
+
+    data_pre_batch = []
+    for i in range(input_array.shape[0]):
+        x_coords   = input_array[i,:,0]
+        y_coords   = input_array[i,:,1]
+        z_coords   = input_array[i,:,2]
+        val_coords = input_array[i,:,3]
+        voxel_index = numpy.where(val_coords >= 0.)
+        values  = val_coords[voxel_index]
+        x_values = x_coords[voxel_index]
+        y_values = y_coords[voxel_index]
+        z_values = z_coords[voxel_index]
+        point_temp = numpy.transpose(numpy.array([x_values,y_values,z_values,values]))
+        data_temp_b = Data(x=point_temp)
+        data_pre_batch.append(data_temp_b)
+    
+
+    return data_pre_batch
+
