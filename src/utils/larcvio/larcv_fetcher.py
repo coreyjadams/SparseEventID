@@ -8,6 +8,7 @@ import tempfile
 import numpy
 import h5py
 
+from torch_geometric.data import Batch
 
 class larcv_fetcher(object):
 
@@ -196,8 +197,10 @@ class larcv_fetcher(object):
             else:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_2d(minibatch_data['image'])
         elif self.image_mode == 'graph':
-            minibatch_data['image'] = data_transforms.larcvsparse_to_torchgeometric(minibatch_data['image'])
-            pass
+                # Here we use Batch.from_data_list to create a bacth object from a lit of torch geometric Data objects
+                minibatch_data['image'] = data_transforms.larcvsparse_to_pointcloud_3d(minibatch_data['image'])
+                minibatch_data['image'] = Batch.from_data_list(minibatch_data['image'])
+            
         else:
             raise Exception("Image Mode not recognized")
 
@@ -231,7 +234,8 @@ class larcv_fetcher(object):
             minibatch_data['image']  = data_transforms.larcvsparse_to_scnsparse_2d(
                 minibatch_data['image'])
         elif self.image_mode == "graph":
-            raise Exception("Graph mode is coming!")
+            minibatch_data['image'] = data_transforms.larcvsparse_to_pointcloud_3d(minibatch_data['image'])
+            minibatch_data['image'] = Batch.from_data_list(minibatch_data['image'])
 
         # Label is always dense:
         minibatch_data['label']  = data_transforms.larcvsparse_to_dense_2d(
