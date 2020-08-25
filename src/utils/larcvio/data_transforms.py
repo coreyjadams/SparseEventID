@@ -194,6 +194,9 @@ def larcvsparse_to_pointcloud3d(input_array):
         z_values = z_coords[voxel_index]
         point_temp = numpy.transpose(numpy.array([x_values,y_values,z_values,values]))
         data_temp_b = Data(x=point_temp)
+
+        # When we have isolated nodes it is necessary to set the number of nodes manually
+        data_temp_b.num_nodes = point_temp.shape[0]
         data_pre_batch.append(data_temp_b)
     
 
