@@ -175,7 +175,7 @@ def larcvsparse_to_dense_3d(input_array, dense_shape):
     return output_array
 
 
-def larcvsparse_to_pointcloud3d(input_array):
+def larcvsparse_to_pointcloud_3d(input_array):
     
      # This function iterates over each batch to create a pointcloud from each batch sample
      # Each point cloud will generate a torch-geometric Data object using the Data() class 
