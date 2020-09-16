@@ -36,8 +36,8 @@ class DGCNNFlags(network_config):
 class DGCNN(torch.nn.Module):
     def __init__(self, output_shape, args):
         torch.nn.Module.__init__(self)
-
-        self.conv1 = DynamicEdgeConv(MLP([2 * 3, 64, 64, 64]), args.k, args.aggregation)
+        # We can modify the first three for a 4 if we want coordinates + pixel intensity
+        self.conv1 = DynamicEdgeConv(MLP([2 * 4, 64, 64, 64]), args.k, args.aggregation)
         self.conv2 = DynamicEdgeConv(MLP([2 * 64, 128]), args.k, args.aggregation)
         self.lin1 = MLP([128 + 64, 1024])
 
@@ -45,7 +45,7 @@ class DGCNN(torch.nn.Module):
         self.mlp = torch.nn.Sequential(
             MLP([1024, 512]), torch.nn.Dropout(0.5), MLP([512, 256]), torch.nn.Dropout(0.5))
 
-        self.lin  = { key : torch.nn.Linear(256, output_shape[key][-1]) for key in output_shape }
+        self.lin  = { key : torch.nn.Linear(256, output_shape[key][1]) for key in output_shape }
     
 
         for key in self.lin:
