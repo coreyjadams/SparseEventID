@@ -174,12 +174,11 @@ def larcvsparse_to_dense_3d(input_array, dense_shape):
 
     return output_array
 
-
 def larcvsparse_to_pointcloud_3d(input_array):
-    
-     # This function iterates over each batch to create a pointcloud from each batch sample
-     # Each point cloud will generate a torch-geometric Data object using the Data() class 
-     # The point clouds are appended to a data list which can be input to a Batch.from_data_list object 
+
+     # This function iterates over each batch to create a pointcloud from each batch sample                                                                       
+     # Each point cloud will generate a torch-geometric Data object using the Data() class                                                                        
+     # The point clouds are appended to a data list which can be input to a Batch.from_data_list object                                                           
 
     data_pre_batch = []
     for i in range(input_array.shape[0]):
@@ -192,13 +191,18 @@ def larcvsparse_to_pointcloud_3d(input_array):
         x_values = x_coords[voxel_index]
         y_values = y_coords[voxel_index]
         z_values = z_coords[voxel_index]
-        point_temp = numpy.transpose(numpy.array([x_values,y_values,z_values,values]))
-        data_temp_b = Data(x=point_temp)
+        zeroes_help = torch.zeros(values.shape[0],1)
+        values_temp = torch.Tensor(numpy.transpose(numpy.array(values)))
+        zeroes_help[:,0] = values_temp
+        point_temp = torch.Tensor(numpy.transpose(numpy.array([x_values,y_values,z_values])))
 
-        # When we have isolated nodes it is necessary to set the number of nodes manually
+        # PointNet takes the features from the X array and the nodes positions from the pos argument 
+        #  Make sure that both x and pos are torch tensors                                                              
+        data_temp_b = Data(x=zeroes_help,pos=point_temp)
+
+        # When we have isolated nodes it is necessary to set the number of nodes manually                                                                         
         data_temp_b.num_nodes = point_temp.shape[0]
         data_pre_batch.append(data_temp_b)
-    
+
 
     return data_pre_batch
-

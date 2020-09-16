@@ -1,6 +1,7 @@
 import os.path as osp
 
 import torch
+import torch.nn.functional as F 
 from torch.nn import Sequential as Seq, Linear as Lin, ReLU, BatchNorm1d as BN
 from torch_geometric.nn import PointConv, fps, radius, global_max_pool
 
@@ -39,14 +40,14 @@ class SAModule(torch.nn.Module):
 
     def forward(self, x, pos, batch):
         idx = fps(pos, batch, ratio=self.ratio)
-        print("idx.shape: ", idx.shape)
+        #print("idx.shape: ", idx.shape)
         row, col = radius(pos, pos[idx], self.r, batch, batch[idx],
                           max_num_neighbors=64)
-        print("row.shape: ", row.shape)
+        #print("row.shape: ", row.shape)
         edge_index = torch.stack([col, row], dim=0)
-        print("edge_index.shape: ", edge_index.shape)
+        #print("edge_index.shape: ", edge_index.shape)
         x = self.conv(x, (pos, pos[idx]), edge_index)
-        print("x.shape: ", x.shape)
+        #print("x.shape: ", x.shape)
 
         pos, batch = pos[idx], batch[idx]
         return x, pos, batch
@@ -75,15 +76,15 @@ def MLP(channels, batch_norm=True):
 class PointNet(torch.nn.Module):
     def __init__(self, output_shape, args):
         torch.nn.Module.__init__(self)
-
-        self.sa1_module = SAModule(0.5, 0.2, MLP([3, 64, 64, 128]))
+        # We include 4 entries in the first MLP, three for coordinates and one for pixel value
+        self.sa1_module = SAModule(0.5, 0.2, MLP([4, 64, 64, 128]))
         self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]))
         self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
 
         self.lin1 = Lin(1024, 512)
         self.lin2 = Lin(512, 256)
 
-        self.lin3  = { key : Lin(256, 10) for key in output_shape }
+        self.lin3  = { key : Lin(256, output_shape[key][1]) for key in output_shape }
     
 
         for key in self.lin3:
@@ -91,28 +92,27 @@ class PointNet(torch.nn.Module):
 
 
     def forward(self, data):
-        print("entered")
+        #print("entered")
         sa0_out = (data.x, data.pos, data.batch)
-        print("sa0")
-        print("data.x.shape: ", data.x.shape)
-        print("data.pos.shape: ", data.pos.shape)
-        print("data.batch.shape: ", data.batch.shape)
+        #print("sa0")
+        #print("data.x.shape: ", data.x.shape)
+        #print("data.pos.shape: ", data.pos.shape)
+        #print("data.batch.shape: ", data.batch.shape)
         sa1_out = self.sa1_module(*sa0_out)
-        print("sa1")
+        #print("sa1")
         sa2_out = self.sa2_module(*sa1_out)
-        print("sa2")
+        #print("sa2")
         sa3_out = self.sa3_module(*sa2_out)
-        print("sa3")
+        #print("sa3")
         x, pos, batch = sa3_out
 
-        x = torch.functional.relu(self.lin1(x))
-        x = torch.functional.dropout(x, p=0.5, training=self.training)
-        x = torch.functional.relu(self.lin2(x))
-        x = torch.functional.dropout(x, p=0.5, training=self.training)
+        x = F.relu(self.lin1(x))
+        x = F.dropout(x, p=0.5, training=self.training)
+        x = F.relu(self.lin2(x))
+        x = F.dropout(x, p=0.5, training=self.training)
         
-        print(x)
+        #print(x)
 
-        # x = self.lin3(x)
         output = {}
         for key in self.lin3:
             # Apply the final block:
