@@ -6,9 +6,11 @@ from collections import OrderedDict
 
 import numpy
 
-import torch
 import horovod.torch as hvd
 hvd.init()
+os.environ["CUDA_VISIBLE_DEVICES"] = str(hvd.local_rank())
+print("CUDA_VISIBLE_DEVICES: ", os.environ["CUDA_VISIBLE_DEVICES"])
+import torch
 
 
 from larcv.distributed_queue_interface import queue_interface
@@ -17,135 +19,8 @@ from larcv.distributed_queue_interface import queue_interface
 from .torch_trainer import torch_trainer
 
 import tensorboardX
-#
-#
-# # max_steps = 5000
-# # base_lr = 0.003
-# peak_lr = 1.5
-# cycle_len = 0.8
-#
-# def constant_lr(step):
-#     return 1.0
-#
-# def decay_after_epoch(step):
-#     if step > self.args.iterations*cycle_len:
-#         return 0.1
-#     else:
-#         return 1.0
-#
-# def lr_increase(step):
-#
-#     # This function actually ignores the input and uses the global step variable
-#     # This allows it to get the learning rate correct after restore.
-#
-#     # For this problem, the dataset size is 1e5.
-#     # So the epoch can be calculated easily:
-#     # epoch = (step * self.args.MINIBATCH_SIZE) / (1e5)
-#
-#     base_lr   = self.args.learning_rate
-#     step_size = 5.0
-#
-#     return 1.0 + step*step_size
-#
-#     # # return 1.0 + max_lr
-#
-#     # # Perform 500 warmup steps, gradually ramping the rate:
-#     # if epoch <= flat_warmup:
-#     #     return 1.0
-#     # elif epoch < flat_warmup + linear_warmup:
-#     #     return 1.0 + (target - 1) * (epoch - flat_warmup) / linear_warmup
-#     # elif epoch <= flat_warmup + linear_warmup + full:
-#     #     return target
-#     # else:
-#     #     return target * numpy.exp(-0.001*(epoch-(full+linear_warmup+flat_warmup)))
-#
-#
-# def one_cycle_clr(step):
-#
-#     peak = peak_lr / self.args.learning_rate
-#
-#     cycle_steps  = int(self.args.iterations*cycle_len)
-#     end_steps = self.args.iterations - cycle_steps
-#     # Which cycle are we in?
-#
-#     cycle = int(step / cycle_steps)
-#     intra_step = 1.0 * (step % cycle_steps)
-#
-#     base_multiplier = 1.0
-#
-#     if cycle < 1:
-# #         base_multiplier *= 0.5
-#
-#         if intra_step > cycle_steps*0.5:
-#             intra_step = cycle_steps - intra_step
-#
-#         value = intra_step * (peak) /(0.5*cycle_steps)
-#
-#     else:
-#         value = (intra_step / end_steps)*-1.0
-#
-#     print ('using', base_multiplier + value)
-#     return base_multiplier + value
-#
-# min_lr = {}
-# max_lr = {}
-# min_lr['2d'] = 0.0002
-# max_lr['2d'] = 0.0018
-# min_lr['3d'] = 0.0001
-# max_lr['3d'] = 0.0035
-#
-# def triangle_clr(step):
-#     '''
-#     Implements the triangular cycle
-#     learning rate schedule
-#     '''
-#     step_size = 100
-#     cycle = math.floor(1 + step / (2 * step_size))
-#     func = 1 - abs(step / step_size - 2 * cycle + 1)
-#     diff = max_lr[self.args.image_type] - min_lr[self.args.image_type]
-#
-#     return (min_lr[self.args.image_type] + diff * max(0, func)) / self.args.learning_rate
-#
-# def exp_range_clr(step,
-#                   step_size = 100,
-#                   min_lr=min_lr[self.args.image_type],
-#                   max_lr=max_lr[self.args.image_type],
-#                   mode='exp_range',
-#                   gamma=0.999):
-#     '''
-#     Implements the cyclical lr with exp decrease
-#     learning rate schedule
-#     '''
-#     scale_func = 1
-#     if mode == 'exp_range':
-#         scale_func = gamma**step
-#
-#     max_lr *= scale_func
-#
-#     if max_lr <= min_lr:
-#         max_lr = min_lr
-#
-#     step_size = 100
-#     cycle = math.floor(1 + step / (2 * step_size))
-#     func = 1 - abs(step / step_size - 2 * cycle + 1)
-#     diff = max_lr - min_lr
-#
-#     return (min_lr + diff * max(0, func)) / self.args.learning_rate
-#
-#
-#
-# def exp_increase_lr(step):
-#   '''
-#   This function increases the learning rate exponentialy
-#   from start_lr to end_lr. It can be used to study the loss
-#   vs. learning rate and fins a proper interaval in which
-#   to vary the learning rate.
-#   '''
-#
-#   start_lr = self.args.learning_rate  # 1.e-7
-#   end_lr = self.args.learning_rate * 1.e8
-#
-#   return math.exp(step * math.log(end_lr / start_lr) / self.args.iterations)
+
+
 
 class distributed_trainer(torch_trainer):
     '''
@@ -164,7 +39,7 @@ class distributed_trainer(torch_trainer):
 
         if self.args.compute_mode == "GPU":
             os.environ['CUDA_VISIBLE_DEVICES'] = str(hvd.local_rank())
-
+            print(os.environ['CUDA_VISIBLE_DEVICES'])
 
         self._rank            = hvd.rank()
 
@@ -185,26 +60,6 @@ class distributed_trainer(torch_trainer):
         # it with a distributed version
 
         torch_trainer.init_optimizer(self)
-
-        # if self.args.lr_schedule == '1cycle':
-        #     self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        #         self._opt, one_cycle_clr, last_epoch=-1)
-        # elif self.args.lr_schedule == 'triangle_clr':
-        #     self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        #         self._opt, triangle_clr, last_epoch=-1)
-        # elif self.args.lr_schedule == 'exp_range_clr':
-        #     self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        #         self._opt, exp_range_clr, last_epoch=-1)
-        # elif self.args.lr_schedule == 'decay':
-        #     self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        #         self._opt, decay_after_epoch, last_epoch=-1)
-        # elif self.args.lr_schedule == 'expincrease':
-        #     self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        #         self._opt, exp_increase_lr, last_epoch=-1)
-        # else:
-        #     self._lr_scheduler = torch.optim.lr_scheduler.LambdaLR(
-        #         self._opt, constant_lr, last_epoch=-1)
-
 
         self._opt = hvd.DistributedOptimizer(self._opt, named_parameters=self._net.named_parameters())
 

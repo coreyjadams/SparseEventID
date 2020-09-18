@@ -200,7 +200,7 @@ class larcv_fetcher(object):
                 # Here we use Batch.from_data_list to create a bacth object from a lit of torch geometric Data objects
                 minibatch_data['image'] = data_transforms.larcvsparse_to_pointcloud_3d(minibatch_data['image'])
                 minibatch_data['image'] = Batch.from_data_list(minibatch_data['image'])
-            
+
         else:
             raise Exception("Image Mode not recognized")
 

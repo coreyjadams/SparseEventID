@@ -12,7 +12,6 @@ network_dir = os.path.dirname(network_dir)
 sys.path.insert(0,network_dir)
 
 # import the necessary
-# from src.utils import flags
 from src.networks import resnet
 from src.networks import sparseresnet
 from src.networks import sparseresnet3d

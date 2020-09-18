@@ -1,9 +1,9 @@
 import os.path as osp
 
 import torch
-import torch.nn.functional as F 
+import torch.nn.functional as F
 from torch.nn import Sequential as Seq, Linear as Lin, ReLU, BatchNorm1d as BN
-from torch_geometric.nn import PointConv, fps, radius, global_max_pool
+# from torch_geometric.nn import PointConv, fps, radius, global_max_pool
 
 from . network_config import network_config, str2bool
 
@@ -33,15 +33,19 @@ class PointNetFlags(network_config):
 
 class SAModule(torch.nn.Module):
     def __init__(self, ratio, r, nn):
+        import torch_geometric
+
         super(SAModule, self).__init__()
         self.ratio = ratio
         self.r = r
-        self.conv = PointConv(nn)
+        self.conv = torch_geometric.nn.PointConv(nn)
 
     def forward(self, x, pos, batch):
-        idx = fps(pos, batch, ratio=self.ratio)
+        import torch_geometric
+
+        idx = torch_geometric.nn.fps(pos, batch, ratio=self.ratio)
         #print("idx.shape: ", idx.shape)
-        row, col = radius(pos, pos[idx], self.r, batch, batch[idx],
+        row, col = torch_geometric.nn.radius(pos, pos[idx], self.r, batch, batch[idx],
                           max_num_neighbors=64)
         #print("row.shape: ", row.shape)
         edge_index = torch.stack([col, row], dim=0)
@@ -59,8 +63,9 @@ class GlobalSAModule(torch.nn.Module):
         self.nn = nn
 
     def forward(self, x, pos, batch):
+        import torch_geometric
         x = self.nn(torch.cat([x, pos], dim=1))
-        x = global_max_pool(x, batch)
+        x = torch_geometric.nn.global_max_pool(x, batch)
         pos = pos.new_zeros((x.size(0), 3))
         batch = torch.arange(x.size(0), device=batch.device)
         return x, pos, batch
@@ -85,7 +90,7 @@ class PointNet(torch.nn.Module):
         self.lin2 = Lin(512, 256)
 
         self.lin3  = { key : Lin(256, output_shape[key][1]) for key in output_shape }
-    
+
 
         for key in self.lin3:
             self.add_module("lin3_{}".format(key), self.lin3[key])
@@ -110,7 +115,7 @@ class PointNet(torch.nn.Module):
         x = F.dropout(x, p=0.5, training=self.training)
         x = F.relu(self.lin2(x))
         x = F.dropout(x, p=0.5, training=self.training)
-        
+
         #print(x)
 
         output = {}
