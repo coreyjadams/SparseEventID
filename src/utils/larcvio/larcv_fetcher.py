@@ -36,6 +36,7 @@ class larcv_fetcher(object):
         self.image_mode      = image_mode
         self.label_mode      = label_mode
         self.input_dimension = input_dimension
+        self.distributed     = distributed
 
         self.writer     = None
 
@@ -105,6 +106,11 @@ class larcv_fetcher(object):
 
         while self._larcv_interface.is_reading(name):
             time.sleep(0.1)
+
+        # # Here, we pause in distributed mode to make sure all loaders are ready:
+        # if self.distributed:
+        #     from mpi4py import MPI
+        #     MPI.COMM_WORLD.Barrier()
 
         return self._larcv_interface.size(name)
 

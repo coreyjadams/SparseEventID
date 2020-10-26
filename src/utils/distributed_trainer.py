@@ -102,10 +102,15 @@ class distributed_trainer(torch_trainer):
             # On the root rank, load the model:
             state = torch_trainer.restore_model(self)
         else:
-            state = {}
+            state = None
 
-        # Here, we need to broad cast the entire state:
-        state = hvd.broadcast_object(state, root_rank = 0)
+        # Broadcast state
+        state = MPI.COMM_WORLD.bcast(state)
+
+        # If there is nothing to restore, that means that the model is uninitialized,
+        # and we need to synchronize the model if using horovod:
+        if state is None and self.args.distributed_backend == "horovod":
+            hvd.broadcast_parameters(self._net.state_dict(), root_rank = 0)
 
         return state
 

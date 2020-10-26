@@ -515,7 +515,7 @@ class torch_trainer(iocore):
 
                 # Fetch the next batch of data with larcv
                 # (Make sure to pull from the validation set)
-                minibatch_data = self.fetch_next_batch('aux')
+                minibatch_data = self.larcv_fetcher.fetch_next_batch("aux",force_pop = True)
 
                 # Convert the input data to torch tensors
                 minibatch_data = self.to_torch(minibatch_data)
