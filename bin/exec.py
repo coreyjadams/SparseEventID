@@ -167,6 +167,11 @@ The most commonly used commands are:
             self.trainer = iocore.iocore(self.args)
 
         if self.args.distributed:
+            if self.args.distributed_backend == "horovod":
+                import horovod.torch as hvd
+                hvd.init()
+                os.environ['CUDA_VISIBLE_DEVICES'] = str(hvd.local_rank())
+
             from src.utils import distributed_trainer
 
             self.trainer = distributed_trainer.distributed_trainer(self.args)
@@ -212,6 +217,13 @@ The most commonly used commands are:
             action  = 'store_true',
             default = False,
             help    = "Run with the MPI compatible mode")
+
+        parser.add_argument('--distributed-backend',
+            type    = str,
+            default = 'horovod',
+            choices = ['horovod', 'DDP'],
+            help    = "Use horovod or torch's native DDP for data-parallel training.")
+
         parser.add_argument('-m','--compute-mode',
             type    = str,
             choices = ['CPU','GPU'],

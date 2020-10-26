@@ -64,12 +64,16 @@ class torch_trainer(iocore):
         else:
             raise Exception(f"Couldn't identify network {self.args.network}")
 
-
+        self.print(self._net)
 
 
         if self.args.training:
             self._net.train(True)
 
+        if self.args.compute_mode == "CPU":
+            pass
+        if self.args.compute_mode == "GPU":
+            self._net.cuda()
 
     def build_lr_schedule(self, learning_rate_schedule = None):
         # Define the learning rate sequence:
@@ -95,6 +99,7 @@ class torch_trainer(iocore):
                     'decay_rate'    : 0.999
                 },
             }
+
 
         # one_cycle_schedule = {
         #     'ramp_up' : {
@@ -198,11 +203,6 @@ class torch_trainer(iocore):
             self._global_step = 0
 
 
-        if self.args.compute_mode == "CPU":
-            pass
-        if self.args.compute_mode == "GPU":
-            self._net.cuda()
-
         if self.args.label_mode == 'all':
             self._log_keys = ['loss', 'accuracy']
         elif self.args.label_mode == 'split':
@@ -243,35 +243,34 @@ class torch_trainer(iocore):
 
         # here we store the loss weights:
         if self.args.label_mode == 'all':
-            self._label_weights = torch.tensor([
-                4930., 247., 2311., 225., 11833., 1592., 3887., 378., 4966., 1169., 1944., 335.,
-                5430., 201., 1630., 67., 13426., 1314., 3111., 243., 5070., 788., 1464., 163.,
-                5851.,3267.,1685.,183.,7211.,3283.,2744.,302.,5804.,1440.,1302., 204.
-                ], device=device)
-            weights = torch.sum(self._label_weights) / self._label_weights
-            self._label_weights = weights / torch.sum(weights)
-
-            self._criterion = torch.nn.CrossEntropyLoss(weight=self._label_weights)
+            # self._label_weights = torch.tensor([
+            #     4930., 247., 2311., 225., 11833., 1592., 3887., 378., 4966., 1169., 1944., 335.,
+            #     5430., 201., 1630., 67., 13426., 1314., 3111., 243., 5070., 788., 1464., 163.,
+            #     5851.,3267.,1685.,183.,7211.,3283.,2744.,302.,5804.,1440.,1302., 204.
+            #     ], device=device)
+            # weights = torch.sum(self._label_weights) / self._label_weights
+            # self._label_weights = weights / torch.sum(weights)
+            #
+            # self._criterion = torch.nn.CrossEntropyLoss(weight=self._label_weights)
+            self._criterion = torch.nn.CrossEntropyLoss(reduction='none')
 
 
         elif self.args.label_mode == 'split':
-            # These are the raw category occurences
+            # # These are the raw category occurences
             self._label_weights = {
                 'label_cpi'  : torch.tensor([50932., 61269.], device=device),
                 'label_prot' : torch.tensor([36583., 46790., 28828.], device=device),
                 'label_npi'  : torch.tensor([70572., 41629.], device=device),
                 'label_neut' : torch.tensor([39452., 39094., 33655.], device=device)
             }
-
+            #
             self._criterion = {}
 
             for key in self._label_weights:
-                weights = torch.sum(self._label_weights[key]) / self._label_weights[key]
-                self._label_weights[key] = weights / torch.sum(weights)
-                self.print ('Weights for', key, '=', self._label_weights[key])
+                # self._criterion[key] = torch.nn.CrossEntropyLoss(weight=self._label_weights[key])
+                self._criterion[key] = torch.nn.CrossEntropyLoss()
 
-            for key in self._label_weights:
-                self._criterion[key] = torch.nn.CrossEntropyLoss(weight=self._label_weights[key])
+                # self._criterion[key] = torch.nn.CrossEntropyLoss(reduction='none')
 
 
 
@@ -297,7 +296,12 @@ class torch_trainer(iocore):
         # The pion categories learn poorly, and slowly.  They quickly reach ~75% and ~85% accuracy for c/n pi
         # Which is just the ratio of the 0 : 1 label in each category.  So, they are learning to predict always zero,
         # And it is difficult to bust out of that.
-
+        self.num_classes = {
+            'label_cpi' : 2,
+            'label_prot' : 3,
+            'label_npi' : 2,
+            'label_neut' : 3,
+        }
 
         if self.args.label_mode == 'all':
             values, target = torch.max(inputs[self.args.keyword_label], dim = 1)
@@ -309,11 +313,16 @@ class torch_trainer(iocore):
                 values, target = torch.max(inputs[key], dim=1)
 
                 temp_loss = self._criterion[key](logits[key], target=target)
-                # self.print(temp_loss.shape)
-                # temp_loss *= self._label_weights[key]
-                # self.print(temp_loss.shape)
-                # temp_loss = torch.sum(temp_loss)
-                # self.print(temp_loss.shape)
+                # if self.args.loss_scheme = "focal":
+                #
+                #     softmax = torch.nn.functional.softmax(logits[key].float(), dim=1)
+                #     onehot = torch.nn.functional.one_hot(target, num_classes=self.num_classes[key])
+                #
+                #     weights = onehot * (1 - softmax)**2
+                #     weights = torch.mean(weights, dim=1)
+                #
+                #     temp_loss = weights * temp_loss
+                #     temp_loss = torch.mean(temp_loss)
 
                 if loss is None:
                     loss = temp_loss
@@ -449,6 +458,15 @@ class torch_trainer(iocore):
         # Compute the gradients for the network parameters:
         loss.backward()
         # print("Completed backward pass")
+
+        first_param = next(self._net.parameters())
+
+        # print(first_param)
+        # print(first_param.grad)
+
+        # print("First layer mean of grad ", torch.mean(torch.abs(first_param)))
+        # print("First layer mean of parameter", torch.mean(torch.abs(first_param.grad)))
+        # print("First layer mean ratio of grad to parameter", torch.mean(torch.abs(first_param.grad) / torch.abs(first_param)))
 
         # Compute any necessary metrics:
         metrics = self._compute_metrics(logits, minibatch_data, loss)

@@ -176,25 +176,38 @@ def larcvsparse_to_dense_3d(input_array, dense_shape):
 
 def larcvsparse_to_pointcloud_3d(input_array):
 
-     # This function iterates over each batch to create a pointcloud from each batch sample
-     # Each point cloud will generate a torch-geometric Data object using the Data() class
-     # The point clouds are appended to a data list which can be input to a Batch.from_data_list object
+    # This function iterates over each batch to create a pointcloud from each batch sample
+    # Each point cloud will generate a torch-geometric Data object using the Data() class
+    # The point clouds are appended to a data list which can be input to a Batch.from_data_list object
+
+    # print(input_array.shape)
 
     data_pre_batch = []
+    # Loop over minibatch index:
     for i in range(input_array.shape[0]):
-        x_coords   = input_array[i,:,0]
-        y_coords   = input_array[i,:,1]
-        z_coords   = input_array[i,:,2]
-        val_coords = input_array[i,:,3]
+        x_coords   = input_array[i,0,:,0]
+        y_coords   = input_array[i,0,:,1]
+        z_coords   = input_array[i,0,:,2]
+        val_coords = input_array[i,0,:,3]
         voxel_index = numpy.where(val_coords != -999)
         values  = val_coords[voxel_index]
         x_values = x_coords[voxel_index]
         y_values = y_coords[voxel_index]
         z_values = z_coords[voxel_index]
+
+        # print(input_array[i,0,0,:])
+        # print(input_array[i,0,1,:])
+        # print(values.shape)
+
         zeroes_help = torch.zeros(values.shape[0],1)
         values_temp = torch.Tensor(numpy.transpose(numpy.array(values)))
+        # print(values_temp.shape)
+        # print(zeroes_help.shape)
         zeroes_help[:,0] = values_temp
         point_temp = torch.Tensor(numpy.transpose(numpy.array([x_values,y_values,z_values])))
+
+        # print(point_temp.shape)
+        # print(point_temp[0:2])
 
         # PointNet takes the features from the X array and the nodes positions from the pos argument
         #  Make sure that both x and pos are torch tensors
@@ -204,5 +217,5 @@ def larcvsparse_to_pointcloud_3d(input_array):
         data_temp_b.num_nodes = point_temp.shape[0]
         data_pre_batch.append(data_temp_b)
 
-
+    # print(len(data_pre_batch))
     return data_pre_batch

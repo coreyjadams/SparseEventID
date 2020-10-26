@@ -35,7 +35,6 @@ class iocore(object):
 
 
 
-
     def print(self, *argv):
         ''' Function for logging as needed.  Works correctly in distributed mode'''
 

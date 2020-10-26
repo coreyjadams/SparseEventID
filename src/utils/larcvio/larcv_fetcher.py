@@ -156,6 +156,7 @@ class larcv_fetcher(object):
         if not force_pop:
             pop = False
 
+
         minibatch_data = self._larcv_interface.fetch_minibatch_data(name,
             pop=pop,fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(name)
@@ -206,45 +207,6 @@ class larcv_fetcher(object):
 
         return minibatch_data
 
-
-########################################################################################
-
-
-
-
-        for key in minibatch_data:
-            if key == 'entries' or key == 'event_ids':
-                continue
-            minibatch_data[key] = numpy.reshape(minibatch_data[key], minibatch_dims[key])
-
-
-        if self.image_mode == "dense":
-            if self.input_dimension == 3:
-                minibatch_data['image']  = data_transforms.larcvsparse_to_dense_3d(
-                    minibatch_data['image'],
-                    dense_shape =self.image_shape,
-                    dataformat  =self.dataformat)
-            elif self.input_dimension == 2:
-                minibatch_data['image']  = data_transforms.larcvsparse_to_dense_2d(
-                    minibatch_data['image'],
-                    dense_shape =self.image_shape,
-                    dataformat  =self.dataformat)
-
-        elif self.image_mode == "sparse":
-            minibatch_data['image']  = data_transforms.larcvsparse_to_scnsparse_2d(
-                minibatch_data['image'])
-        elif self.image_mode == "graph":
-            minibatch_data['image'] = data_transforms.larcvsparse_to_pointcloud_3d(minibatch_data['image'])
-            minibatch_data['image'] = Batch.from_data_list(minibatch_data['image'])
-
-        # Label is always dense:
-        minibatch_data['label']  = data_transforms.larcvsparse_to_dense_2d(
-            minibatch_data['label'],
-            dense_shape =self.image_shape,
-            dataformat  =self.dataformat)
-
-
-        return minibatch_data
 
     def prepare_writer(self, input_file, output_file):
 

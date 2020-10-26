@@ -99,28 +99,21 @@ class PointNet(torch.nn.Module):
     def forward(self, data):
         #print("entered")
         sa0_out = (data.x, data.pos, data.batch)
-        #print("sa0")
-        #print("data.x.shape: ", data.x.shape)
-        #print("data.pos.shape: ", data.pos.shape)
-        #print("data.batch.shape: ", data.batch.shape)
         sa1_out = self.sa1_module(*sa0_out)
-        #print("sa1")
         sa2_out = self.sa2_module(*sa1_out)
-        #print("sa2")
         sa3_out = self.sa3_module(*sa2_out)
-        #print("sa3")
         x, pos, batch = sa3_out
 
-        x = F.relu(self.lin1(x))
-        x = F.dropout(x, p=0.5, training=self.training)
-        x = F.relu(self.lin2(x))
-        x = F.dropout(x, p=0.5, training=self.training)
 
-        #print(x)
+        x = F.relu(self.lin1(x))
+        x = F.dropout(x, p=0.1, training=self.training)
+        x = F.relu(self.lin2(x))
+        x = F.dropout(x, p=0.1, training=self.training)
+
 
         output = {}
         for key in self.lin3:
-            # Apply the final block:
             output[key] = self.lin3[key](x)
+
 
         return output

@@ -3,18 +3,22 @@ import sys
 import time
 import math
 from collections import OrderedDict
+import socket
+
 
 import numpy
-
-import horovod.torch as hvd
-hvd.init()
-os.environ["CUDA_VISIBLE_DEVICES"] = str(hvd.local_rank())
-print("CUDA_VISIBLE_DEVICES: ", os.environ["CUDA_VISIBLE_DEVICES"])
 import torch
 
+from mpi4py import MPI
+
+# Pytorch data parallel:
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.multiprocessing as mp
+
+import horovod.torch as hvd
 
 from larcv.distributed_queue_interface import queue_interface
-
 
 from .torch_trainer import torch_trainer
 
@@ -30,27 +34,41 @@ class distributed_trainer(torch_trainer):
 
     '''
     def __init__(self, args):
+
         torch_trainer.__init__(self, args)
         # Rely on the base class for most standard parameters, only
         # search for parameters relevant for distributed computing here
 
         # Put the IO rank as the last rank in the COMM, since rank 0 does tf saves
-        root_rank = hvd.size() - 1
+        #
+        # if self.args.compute_mode == "GPU":
+        #     print(os.environ['CUDA_VISIBLE_DEVICES'])
 
-        if self.args.compute_mode == "GPU":
-            os.environ['CUDA_VISIBLE_DEVICES'] = str(hvd.local_rank())
-            print(os.environ['CUDA_VISIBLE_DEVICES'])
+        # We use MPI to pick the rank and world size:
 
-        self._rank            = hvd.rank()
+        # Rank0
+
+        self.rank = MPI.COMM_WORLD.Get_rank()
+        world_size = MPI.COMM_WORLD.Get_size()
+
+
+        if self.args.distributed_backend == "DDP":
+            init_method = f'file:///home/cadams/.torch_ddp_init'
+            dist.init_process_group("nccl", init_method=init_method,rank=self.rank, world_size=world_size)
+
+        # if self.rank == 0:
+        #     hostname = socket.gethostname()
+        #     IPAddr = socket.gethostbyname(hostname)
+
 
     def print(self, *argv):
-        if self._rank == 0:
+        if self.rank == 0:
             torch_trainer.print(self, *argv)
 
 
     def save_model(self):
 
-        if hvd.rank() == 0:
+        if self.rank == 0:
             torch_trainer.save_model(self)
 
 
@@ -61,55 +79,38 @@ class distributed_trainer(torch_trainer):
 
         torch_trainer.init_optimizer(self)
 
-        self._opt = hvd.DistributedOptimizer(self._opt, named_parameters=self._net.named_parameters())
+        if self.args.distributed_backend == "horovod":
+            self._opt = hvd.DistributedOptimizer(self._opt, named_parameters=self._net.named_parameters())
 
+    def init_network(self):
 
+        torch_trainer.init_network(self)
+        if self.args.distributed_backend == "DDP":
+            self._net = DDP(self._net)
 
     def init_saver(self):
-        if hvd.rank() == 0:
+        if self.rank == 0:
             torch_trainer.init_saver(self)
         else:
             self._saver = None
             self._aux_saver = None
 
 
-    def load_state(self):
-        # Load the state on rank 0:
-        if state is not None and hvd.rank() == 0:
-            self.load_state(state)
-
-
-        # Broadcast the global step:
-        self._global_step = hvd.broadcast_object(self._global_step, root_rank = 0)
-
-        # Broadcast the state of the model:
-        hvd.broadcast_parameters(self._net.state_dict(), root_rank = 0)
-
-        # Broadcast the optimizer state:
-        hvd.broadcast_optimizer_state(self._opt, root_rank = 0)
-
-        # Horovod doesn't actually move the optimizer onto a GPU:
-        if self.args.compute_mode == "GPU":
-            for state in self._opt.state.values():
-                for k, v in state.items():
-                    if torch.is_tensor(v):
-                        state[k] = v.cuda()
-
-        # Broadcast the LR Schedule state:
-        state_dict = hvd.broadcast_object(self.lr_scheduler.state_dict(), root_rank = 0)
-        self.lr_scheduler.load_state_dict(state_dict)
-
     def restore_model(self):
 
-        if hvd.rank() == 0:
+        if self.rank == 0:
             # On the root rank, load the model:
             state = torch_trainer.restore_model(self)
         else:
-            state = None
+            state = {}
 
+        # Here, we need to broad cast the entire state:
+        state = hvd.broadcast_object(state, root_rank = 0)
+
+        return state
 
     def summary(self, metrics, saver=""):
-        if hvd.rank() == 0:
+        if self.rank == 0:
             torch_trainer.summary(self, metrics, saver)
         return
 
@@ -121,12 +122,15 @@ class distributed_trainer(torch_trainer):
 
         for key in metrics:
             # self.print("All reducing ", key)
-            metrics[key] = hvd.allreduce(metrics[key], name = key)
+            if self.args.distributed_backend == "horovod":
+                metrics[key] = hvd.allreduce(metrics[key], name = key)
+            else:
+                pass
 
         return metrics
 
 
 
     def log(self, metrics, saver=""):
-        if hvd.rank() == 0:
+        if self.rank == 0:
             torch_trainer.log(self, metrics, saver)
