@@ -21,7 +21,7 @@ class LinearBlock(torch.nn.Module):
         if hasattr(self, 'batch_norm'):
             return self.batch_norm(x)
         else:
-            return x        
+            return x
 
 class MLP(torch.nn.Module):
 
