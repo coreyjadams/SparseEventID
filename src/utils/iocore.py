@@ -248,6 +248,8 @@ class iocore(object):
 
         '''
 
+
+
         # Find the base path of the log directory
         if self.args.checkpoint_directory == None:
             file_path= self.args.log_directory  + "/checkpoints/"

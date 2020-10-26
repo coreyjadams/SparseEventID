@@ -241,18 +241,14 @@ class torch_trainer(iocore):
 
         device = self.get_device()
 
+        if self.args.loss_mode == "focal":
+            reduction = "none"
+        else:
+            reduction = "mean"
+
         # here we store the loss weights:
         if self.args.label_mode == 'all':
-            # self._label_weights = torch.tensor([
-            #     4930., 247., 2311., 225., 11833., 1592., 3887., 378., 4966., 1169., 1944., 335.,
-            #     5430., 201., 1630., 67., 13426., 1314., 3111., 243., 5070., 788., 1464., 163.,
-            #     5851.,3267.,1685.,183.,7211.,3283.,2744.,302.,5804.,1440.,1302., 204.
-            #     ], device=device)
-            # weights = torch.sum(self._label_weights) / self._label_weights
-            # self._label_weights = weights / torch.sum(weights)
-            #
-            # self._criterion = torch.nn.CrossEntropyLoss(weight=self._label_weights)
-            self._criterion = torch.nn.CrossEntropyLoss(reduction='none')
+            self._criterion = torch.nn.CrossEntropyLoss(reduction=reduction)
 
 
         elif self.args.label_mode == 'split':
@@ -264,14 +260,19 @@ class torch_trainer(iocore):
                 'label_neut' : torch.tensor([39452., 39094., 33655.], device=device)
             }
             #
-            self._criterion = {}
+            self._criterion = torch.nn.CrossEntropyLoss(reduction = reduction)
 
-            for key in self._label_weights:
-                # self._criterion[key] = torch.nn.CrossEntropyLoss(weight=self._label_weights[key])
-                self._criterion[key] = torch.nn.CrossEntropyLoss()
+    def focal_loss(self, loss, logits, target, num_classes):
 
-                # self._criterion[key] = torch.nn.CrossEntropyLoss(reduction='none')
+        softmax = torch.nn.functional.softmax(logits.float(), dim=1)
+        onehot  = torch.nn.functional.one_hot(target, num_classes=num_classes)
+        weights = onehot * (1 - softmax)**2
+        weights = torch.mean(weights, dim=1)
 
+        loss = weights * loss
+        loss = torch.mean(loss)
+
+        return loss
 
 
     def _calculate_loss(self, inputs, logits):
@@ -280,22 +281,6 @@ class torch_trainer(iocore):
         returns a single scalar for the optimizer to use.
         '''
 
-
-        # This dataset is not balanced across labels.  So, we can weight the loss according to the labels
-        #
-        # 'label_cpi': array([1523.,  477.]),
-        # 'label_prot': array([528., 964., 508.]),
-        # 'label_npi': array([1699.,  301.]),
-        # 'label_neut': array([655., 656., 689.])
-
-        # You can see that the only category that's truly balanced is the neutrino category.
-        # The proton category has a ratio of 1 : 2 : 1 which isn't terrible, but can be fixed.
-        # Both the proton and neutrino categories learn well.
-        #
-        #
-        # The pion categories learn poorly, and slowly.  They quickly reach ~75% and ~85% accuracy for c/n pi
-        # Which is just the ratio of the 0 : 1 label in each category.  So, they are learning to predict always zero,
-        # And it is difficult to bust out of that.
         self.num_classes = {
             'label_cpi' : 2,
             'label_prot' : 3,
@@ -303,33 +288,27 @@ class torch_trainer(iocore):
             'label_neut' : 3,
         }
 
+
+
         if self.args.label_mode == 'all':
             values, target = torch.max(inputs[self.args.keyword_label], dim = 1)
             loss = self._criterion(logits, target=target)
-            return loss
+            if self.args.loss_mode == "focal":
+                loss = self.focal_loss(loss, logits, target, num_classes = 36)
         elif self.args.label_mode == 'split':
             loss = None
             for key in logits:
                 values, target = torch.max(inputs[key], dim=1)
-
-                temp_loss = self._criterion[key](logits[key], target=target)
-                # if self.args.loss_scheme = "focal":
-                #
-                #     softmax = torch.nn.functional.softmax(logits[key].float(), dim=1)
-                #     onehot = torch.nn.functional.one_hot(target, num_classes=self.num_classes[key])
-                #
-                #     weights = onehot * (1 - softmax)**2
-                #     weights = torch.mean(weights, dim=1)
-                #
-                #     temp_loss = weights * temp_loss
-                #     temp_loss = torch.mean(temp_loss)
+                temp_loss = self._criterion(logits[key], target = target)
+                if self.args.loss_mode == "focal":
+                    temp_loss = self.focal_loss(temp_loss, logits[key], target, num_classes=self.num_classes[key])
 
                 if loss is None:
                     loss = temp_loss
                 else:
                     loss += temp_loss
 
-            return loss
+        return loss
 
 
     def _calculate_accuracy(self, logits, minibatch_data):

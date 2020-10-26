@@ -91,6 +91,11 @@ The most commonly used commands are:
             type    = float,
             default = 0.0,
             help    = "Weight decay strength")
+        self.parser.add_argument("--loss-mode",
+            type    = str,
+            default = 'mean',
+            choices = ['mean', 'focal'],
+            help    = "Configure the loss averaging scheme between batches.")
 
 
 
@@ -165,6 +170,10 @@ The most commonly used commands are:
             from src.utils import iocore
 
             self.trainer = iocore.iocore(self.args)
+
+        # Add to the log directory the model name, if it's not already present:
+        if self.args.network not in self.args.log_directory:
+            self.args.log_directory += "/" + self.args.network
 
         if self.args.distributed:
             if self.args.distributed_backend == "horovod":
