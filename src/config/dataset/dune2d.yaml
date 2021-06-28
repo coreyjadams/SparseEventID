@@ -1,5 +1,5 @@
 label:          Classification
-data_directory: /lus/theta-fs0/projects/datascience/cadams/datasets/DUNE/pixsim_small/
+data_directory: /grand/projects/datascience/cadams/datasets/DUNE/pixsim_small/
 train_file:     train.h5
 test_file:      none.h5
 val_file:       none.h5

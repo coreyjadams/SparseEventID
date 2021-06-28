@@ -199,7 +199,7 @@ def larcvsparse_to_pointcloud_2d(input_array):
     # Each point cloud will generate a torch-geometric Data object using the Data() class
     # The point clouds are appended to a data list which can be input to a Batch.from_data_list object
 
-    # At the end, we have a list of arrays of shape 
+    # At the end, we have a list of arrays of shape
     # [batch_size, val, npoints]
     # This is treating x/y/val as features and npoints as the "image"
 
@@ -212,7 +212,7 @@ def larcvsparse_to_pointcloud_2d(input_array):
     # output = [ numpy.zeros(shape=[batch_size, 1, npoints, 3]) for plane in nplanes]
 
     # Loop over minibatch index:
-    
+
     output = numpy.split(input_array,3, axis=1)
 
 
@@ -223,38 +223,37 @@ def larcvsparse_to_pointcloud_2d(input_array):
         o[coords[0],0, coords[1],1] = 0
         o[coords[0],0, coords[1],2] = 0
 
-        # Next We need 
-
-    # for i in range(input_array.shape[0]):
-    #     x_coords   = input_array[i,0,:,0]
-    #     y_coords   = input_array[i,0,:,1]
-    #     # z_coords   = input_array[i,0,:,2]
-    #     val_coords = input_array[i,0,:,3]
-
-    #     # Turn all empty pixels to 0 in graph mode:
-    #     voxel_index = numpy.where(val_coords != -999)
-    #     values = val_coords
-    #     values[voxel_index] = 0.0
-
 
     output = [ numpy.transpose(numpy.squeeze(o), axes=(0, 2, 1)) for o in output]
 
 
-    #     zeroes_help = torch.zeros(values.shape[0],1)
-    #     values_temp = torch.Tensor(numpy.transpose(numpy.array(values)))
-    #     # print(values_temp.shape)
-    #     # print(zeroes_help.shape)
-    #     zeroes_help[:,0] = values_temp
-    #     point_temp = torch.Tensor(numpy.transpose(numpy.array([x_values,y_values,z_values])))
 
-
-    #     # PointNet takes the features from the X array and the nodes positions from the pos argument
-    #     #  Make sure that both x and pos are torch tensors
-    #     data_temp_b = Data(x=zeroes_help,pos=point_temp)
-
-    #     # When we have isolated nodes it is necessary to set the number of nodes manually
-    #     data_temp_b.num_nodes = point_temp.shape[0]
-    #     data_pre_batch.append(data_temp_b)
-
-    # # print(len(data_pre_batch))
     return output
+
+def larcvsparse_to_pointcloud_3d(input_array):
+
+    # This function iterates over each batch to create a pointcloud from each batch sample
+    # Each point cloud will generate a torch-geometric Data object using the Data() class
+    # The point clouds are appended to a data list which can be input to a Batch.from_data_list object
+
+    # At the end, we have a list of arrays of shape
+    # [batch_size, val, npoints]
+    # This is treating x/y/valz as features and npoints as the "image"
+
+
+    batch_size = input_array.shape[0]
+    npoints    = input_array.shape[2]
+
+    output = numpy.squeeze(input_array)
+
+    # Loop over minibatch index:
+
+
+    # Turn al the -999s to 0.0 for graphs:
+    coords = numpy.where(output[:,:,-1] == -999)
+    output[coords[0], coords[1],0] = 0
+    output[coords[0], coords[1],1] = 0
+    output[coords[0], coords[1],2] = 0
+    output[coords[0], coords[1],3] = 0
+
+    return numpy.transpose(output, axes=(0, 2, 1))

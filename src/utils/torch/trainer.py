@@ -55,23 +55,29 @@ class trainer(trainercore):
 
         # To initialize the network, we see what the name is
         # and act on that:
-        if self.args.network.name == "resnet2d":
-            from src.networks import resnet
-            self._net = resnet.ResNet(output_shape, self.args)
-        elif self.args.network.name == "sparseresnet2d":
-            from src.networks import sparseresnet
-            self._net = sparseresnet.ResNet(output_shape, self.args)
-        elif self.args.network.name == "sparseresnet3d":
-            from src.networks import sparseresnet3d
-            self._net = sparseresnet3d.ResNet(output_shape, self.args)
+        if self.args.network.name == "resnet":
+            if self.args.framework.sparse == True:
+                if self.args.dataset.dimension == 2:
+                    from src.networks.torch import sparseresnet
+                    self._net = sparseresnet.ResNet(output_shape, self.args)
+                else:
+                    from src.networks.torch import sparseresnet3d
+                    self._net = sparseresnet3d.ResNet(output_shape, self.args)
+            else:
+                if self.args.dataset.dimension == 2:
+                    from src.networks.torch import resnet
+                    self._net = resnet.ResNet(output_shape, self.args)
+                else:
+                    raise Exception("No Resnet3d Implemented!")
         elif self.args.network.name == "pointnet":
-            from src.networks import pointnet
-            self._net = pointnet.PointNet(output_shape, self.args)
-        elif self.args.network.name == "gcn":
-            from src.networks import gcn
-            self._net = gcn.GCNNet(output_shape, self.args)
+            if self.args.dataset.dimension == 2:
+                from src.networks.torch import pointnet
+                self._net = pointnet.PointNet(output_shape, self.args)
+            else:
+                from src.networks.torch import pointnet3d
+                self._net = pointnet3d.PointNet(output_shape, self.args)
         elif self.args.network.name == "dgcnn":
-            from src.networks import dgcnn
+            from src.networks.torch import dgcnn
             self._net = dgcnn.DGCNN(output_shape, self.args)
         else:
             raise Exception(f"Couldn't identify network {self.args.network.name}")
@@ -210,6 +216,7 @@ class trainer(trainercore):
         for key in accuracy:
             metrics['acc/{}'.format(key)] = accuracy[key]
 
+
         return metrics
 
 
@@ -236,7 +243,6 @@ class trainer(trainercore):
         if self.args.run.compute_mode == "GPU":
             if device is None:
                 device = torch.device('cuda')
-            # print(device)
 
         else:
             if device is None:
@@ -261,7 +267,11 @@ class trainer(trainercore):
                             minibatch_data['image'][2],
                         )
             elif key == 'image' and self.args.network.data_format == 'graph':
-                minibatch_data[key] = [ torch.tensor(m, device=device) for m in minibatch_data[key]]
+                if self.args.dataset.dimension == 2:
+                    minibatch_data[key] = [ torch.tensor(m, device=device) for m in minibatch_data[key]]
+                else:
+                    # This is repetitive from below, but might need to be adjusted eventually.
+                    minibatch_data[key] = torch.tensor(minibatch_data[key], device=device)
             else:
                 minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
 
@@ -291,22 +301,14 @@ class trainer(trainercore):
         # Run a forward pass of the model on the input image:
         logits = self._net(minibatch_data['image'])
 
-        # print("Completed Forward pass")
         # Compute the loss based on the logits
         loss = self._calculate_loss(minibatch_data, logits)
 
         # Compute the gradients for the network parameters:
         loss.backward()
-        # print("Completed backward pass")
 
         first_param = next(self._net.parameters())
 
-        # print(first_param)
-        # print(first_param.grad)
-
-        # print("First layer mean of grad ", torch.mean(torch.abs(first_param)))
-        # print("First layer mean of parameter", torch.mean(torch.abs(first_param.grad)))
-        # print("First layer mean ratio of grad to parameter", torch.mean(torch.abs(first_param.grad) / torch.abs(first_param)))
 
         # Compute any necessary metrics:
         metrics = self._compute_metrics(logits, minibatch_data, loss)
@@ -323,15 +325,11 @@ class trainer(trainercore):
 
         metrics['io_fetch_time'] = (io_end_time - io_start_time).total_seconds()
 
-        # print("Calculated metrics")
-
 
         step_start_time = datetime.datetime.now()
         # Apply the parameter update:
         self._opt.step()
         self.lr_scheduler.step()
-
-        # print("Updated Weights")
         global_end_time = datetime.datetime.now()
 
         metrics['step_time'] = (global_end_time - step_start_time).total_seconds()
@@ -339,11 +337,7 @@ class trainer(trainercore):
 
         self.log(metrics, kind="train")
 
-        # print("Completed Log")
-
         self.summary(metrics, kind="train")
-
-        # print("Summarized")
 
         # Compute global step per second:
         self._seconds_per_global_step = (global_end_time - global_start_time).total_seconds()
@@ -364,6 +358,10 @@ class trainer(trainercore):
             for metric in metrics.keys():
                 self._savers[kind].add_scalar(metric, metrics[metric], self._global_step)
 
+            # try to get the learning rate
+            if kind == "train":
+                self._savers[kind].add_scalar("learning_rate", self._opt.state_dict()['param_groups'][0]['lr'], self._global_step)
+            return
 
     def val_step(self, n_iterations=1):
 

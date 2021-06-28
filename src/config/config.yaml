@@ -16,4 +16,4 @@ run:
   id: ???
   precision: float32
   profile: False
-  output_dir: output/${framework.name}/${network.name}/${run.id}/
+  output_dir: output/${framework.name}/${network.name}/${dataset.dimension}/${run.id}/

@@ -16,7 +16,7 @@ import pathlib
 
 
 import logging
-logger = logging.getLogger("cosmictagger")
+logger = logging.getLogger()
 
 class trainercore(object):
     '''
@@ -95,37 +95,6 @@ class trainercore(object):
 
         elif self.args.mode.name == "inference":
             pass
-
-
-        # # Check that the training file exists:
-        # if not self.args.aux_file.exists():
-        #     if self.args.mode == "train":
-        #         self.print("WARNING: Aux file does not exist.  Setting to None for training")
-        #         self.args.aux_file = None
-        #     else:
-        #         # In inference mode, we are creating the aux file.  So we need to check
-        #         # that the directory exists.  Otherwise, no writing.
-        #         if not self.args.aux_file.parent.exists():
-        #             self.print("WARNING: Aux file's directory does not exist, skipping.")
-        #             self.args.aux_file = None
-        #         elif self.args.aux_file is None or str(self.args.aux_file).lower() == "none":
-        #             self.print("WARNING: no aux file set, so not writing inference results.")
-        #             self.args.aux_file = None
-
-
-        # if self.args.aux_file is not None:
-        #     if self.args.mode == "train":
-        #         # Fetching data for on the fly testing:
-        #         self._aux_data_size = self.larcv_fetcher.prepare_sample(
-        #             name            = "aux",
-        #             input_file      = self.args.dataset.data_directory + self.args.aux_file,
-        #             batch_size      = self.args.run.minibatch_size,
-        #             color           = color
-        #         )
-        #     elif self.args.mode == "inference":
-        #         raise Exception("Need to check the inference writer works")
-        #         self._aux_data_size = self.larcv_fetcher.prepare_writer(
-        #             input_file = self.args.file, output_file = str(self.args.aux_file))
 
 
     def init_network(self):

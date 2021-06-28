@@ -38,6 +38,7 @@ class larcv_fetcher(object):
         self.input_dimension = dataset.dimension
         self.distributed     = distributed
 
+
         self.writer     = None
 
 

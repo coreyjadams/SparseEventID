@@ -1,7 +1,7 @@
 label:          Classification
-data_directory: /Users/corey.adams/data/DUNE/pixsim_small/
-train_file:     test.h5
-test_file:      test.h5
-val_file:       test.h5
+data_directory: /grand/projects/datascience/cadams/datasets/DUNE/pixsim_small/
+train_file:     train.h5
+test_file:      none.h5
+val_file:       none.h5
 access_mode:    random_blocks
 dimension:      3
