@@ -8,20 +8,21 @@ import tempfile
 import numpy
 import h5py
 
-from torch_geometric.data import Batch
+import logging
+logger = logging.getLogger()
 
 class larcv_fetcher(object):
 
-    def __init__(self, mode, distributed, image_mode, label_mode, input_dimension, seed=None):
+    def __init__(self, mode, distributed, dataset, data_format, seed=None):
 
         if mode not in ['train', 'inference', 'iotest']:
             raise Exception("Larcv Fetcher can't handle mode ", mode)
 
 
-        if mode == "inference":
-            random_access_mode = "serial_access"
-        else:
-            random_access_mode = "random_blocks"
+        random_access_mode = dataset.access_mode
+
+        if random_access_mode != "serial_access" and mode == "inference":
+            logger.warn("Using random blocks in inference - possible bug!")
 
         if distributed:
             from larcv import distributed_queue_interface
@@ -33,16 +34,15 @@ class larcv_fetcher(object):
                 random_access_mode=random_access_mode, seed=seed)
 
         self.mode            = mode
-        self.image_mode      = image_mode
-        self.label_mode      = label_mode
-        self.input_dimension = input_dimension
+        self.image_mode      = data_format
+        self.input_dimension = dataset.dimension
         self.distributed     = distributed
 
         self.writer     = None
 
 
     def __del__(self):
-        if self.writer is not None:
+        if hasattr(self, 'writer') and self.writer is not None:
             self.writer.finalize()
 
 
@@ -58,13 +58,13 @@ class larcv_fetcher(object):
         config = io_templates.dataset_io(
                 name        = name,
                 input_file  = input_file,
-                image_dim   = self.input_dimension,
-                label_mode  = self.label_mode)
+                image_dim   = self.input_dimension)
 
 
         # Generate a named temp file:
         main_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
         main_file.write(config.generate_config_str())
+
 
         main_file.close()
 
@@ -86,14 +86,11 @@ class larcv_fetcher(object):
             else:
                 data_keys[proc._name] = proc._name
 
-        # Assign the keywords here:
-        if self.label_mode == 'all':
-            self.keyword_label = 'label'
-        else:
-            self.keyword_label = []
-            for key in data_keys.keys():
-                if key != 'image':
-                    self.keyword_label.append(key)
+        # Assign the keywords here:    
+        self.keyword_label = []
+        for key in data_keys.keys():
+            if key != 'image':
+                self.keyword_label.append(key)
 
 
 
@@ -115,29 +112,6 @@ class larcv_fetcher(object):
         return self._larcv_interface.size(name)
 
 
-#############################################################################
-
-
-
-        # # In inference mode, we use h5py to pull out the energy and interaction flavor.
-        # if self.mode == "inference":
-        #     try:
-        #         # Open the file:
-        #         f = h5py.File(input_file, 'r')
-        #         # Read the right tables from the file:
-        #         particle_data = f['Data/particle_sbndneutrino_group/particles']
-        #         extents = f['Data/particle_sbndneutrino_group/extents']
-
-        #         # We index into the particle table with extents:
-        #         indexes = extents['first']
-        #         self.truth_variables[name] = {}
-        #         self.truth_variables[name]['energy'] = particle_data['energy_init'][indexes]
-        #         self.truth_variables[name]['ccnc']   = particle_data['current_type'][indexes]
-        #         self.truth_variables[name]['pdg']    = particle_data['pdg'][indexes]
-
-        #         f.close()
-        #     except:
-        #         pass
 
     def fetch_minibatch_dims(self, name):
         return self._larcv_interface.fetch_minibatch_dims(name)
@@ -147,10 +121,7 @@ class larcv_fetcher(object):
         dims = self.fetch_minibatch_dims(name)
 
         # This sets up the necessary output shape:
-        if self.label_mode == 'split':
-            output_shape = { key : dims[key] for key in self.keyword_label}
-        else:
-            output_shape = dims[self.keyword_label]
+        output_shape = { key : dims[key] for key in self.keyword_label}
 
         return output_shape
 
@@ -204,9 +175,11 @@ class larcv_fetcher(object):
             else:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_scnsparse_2d(minibatch_data['image'])
         elif self.image_mode == 'graph':
-                # Here we use Batch.from_data_list to create a bacth object from a lit of torch geometric Data objects
+
+            if self.input_dimension == 3:
                 minibatch_data['image'] = data_transforms.larcvsparse_to_pointcloud_3d(minibatch_data['image'])
-                minibatch_data['image'] = Batch.from_data_list(minibatch_data['image'])
+            else:
+                minibatch_data['image'] = data_transforms.larcvsparse_to_pointcloud_2d(minibatch_data['image'])
 
         else:
             raise Exception("Image Mode not recognized")

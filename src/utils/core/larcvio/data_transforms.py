@@ -1,9 +1,8 @@
 import numpy
 import torch
-from torch_geometric.data import Data
 
 '''
-This is a not torch-free file that exists to massage data
+This is a torch-free file that exists to massage data
 From sparse to dense or dense to sparse, etc.
 
 This can also convert from sparse to sparse to rearrange formats
@@ -174,48 +173,88 @@ def larcvsparse_to_dense_3d(input_array, dense_shape):
 
     return output_array
 
-def larcvsparse_to_pointcloud_3d(input_array):
+# class GraphData(object):
+
+#     def __init__(self, locations, values):
+
+#         self.locs = point_locations
+#         self.vals = values
+
+#         assert len(self.locs) == len(self.vals)
+
+#     def __len__(self):
+#         return self.values.shape[0]
+
+#     def dim(self):
+#         return len(self.locs[0].shape) - 1
+
+# class GraphBatch(object):
+
+#     def __init__(self, graphs)
+#         self.graphs = []
+
+def larcvsparse_to_pointcloud_2d(input_array):
 
     # This function iterates over each batch to create a pointcloud from each batch sample
     # Each point cloud will generate a torch-geometric Data object using the Data() class
     # The point clouds are appended to a data list which can be input to a Batch.from_data_list object
 
-    # print(input_array.shape)
+    # At the end, we have a list of arrays of shape 
+    # [batch_size, val, npoints]
+    # This is treating x/y/val as features and npoints as the "image"
 
-    data_pre_batch = []
+
+    nplanes    = 3
+    batch_size = input_array.shape[0]
+    npoints    = input_array.shape[2]
+
+
+    # output = [ numpy.zeros(shape=[batch_size, 1, npoints, 3]) for plane in nplanes]
+
     # Loop over minibatch index:
-    for i in range(input_array.shape[0]):
-        x_coords   = input_array[i,0,:,0]
-        y_coords   = input_array[i,0,:,1]
-        z_coords   = input_array[i,0,:,2]
-        val_coords = input_array[i,0,:,3]
-        voxel_index = numpy.where(val_coords != -999)
-        values  = val_coords[voxel_index]
-        x_values = x_coords[voxel_index]
-        y_values = y_coords[voxel_index]
-        z_values = z_coords[voxel_index]
+    
+    output = numpy.split(input_array,3, axis=1)
 
-        # print(input_array[i,0,0,:])
-        # print(input_array[i,0,1,:])
-        # print(values.shape)
 
-        zeroes_help = torch.zeros(values.shape[0],1)
-        values_temp = torch.Tensor(numpy.transpose(numpy.array(values)))
-        # print(values_temp.shape)
-        # print(zeroes_help.shape)
-        zeroes_help[:,0] = values_temp
-        point_temp = torch.Tensor(numpy.transpose(numpy.array([x_values,y_values,z_values])))
+    for o in output:
+        # Turn al the -999s to 0.0 for graphs:
+        coords = numpy.where(o[:,0,:,-1] == -999)
+        o[coords[0],0, coords[1],0] = 0
+        o[coords[0],0, coords[1],1] = 0
+        o[coords[0],0, coords[1],2] = 0
 
-        # print(point_temp.shape)
-        # print(point_temp[0:2])
+        # Next We need 
 
-        # PointNet takes the features from the X array and the nodes positions from the pos argument
-        #  Make sure that both x and pos are torch tensors
-        data_temp_b = Data(x=zeroes_help,pos=point_temp)
+    # for i in range(input_array.shape[0]):
+    #     x_coords   = input_array[i,0,:,0]
+    #     y_coords   = input_array[i,0,:,1]
+    #     # z_coords   = input_array[i,0,:,2]
+    #     val_coords = input_array[i,0,:,3]
 
-        # When we have isolated nodes it is necessary to set the number of nodes manually
-        data_temp_b.num_nodes = point_temp.shape[0]
-        data_pre_batch.append(data_temp_b)
+    #     # Turn all empty pixels to 0 in graph mode:
+    #     voxel_index = numpy.where(val_coords != -999)
+    #     values = val_coords
+    #     values[voxel_index] = 0.0
 
-    # print(len(data_pre_batch))
-    return data_pre_batch
+
+    output = [ numpy.transpose(numpy.squeeze(o), axes=(0, 2, 1)) for o in output]
+
+
+    #     zeroes_help = torch.zeros(values.shape[0],1)
+    #     values_temp = torch.Tensor(numpy.transpose(numpy.array(values)))
+    #     # print(values_temp.shape)
+    #     # print(zeroes_help.shape)
+    #     zeroes_help[:,0] = values_temp
+    #     point_temp = torch.Tensor(numpy.transpose(numpy.array([x_values,y_values,z_values])))
+
+
+    #     # PointNet takes the features from the X array and the nodes positions from the pos argument
+    #     #  Make sure that both x and pos are torch tensors
+    #     data_temp_b = Data(x=zeroes_help,pos=point_temp)
+
+    #     # When we have isolated nodes it is necessary to set the number of nodes manually
+    #     data_temp_b.num_nodes = point_temp.shape[0]
+    #     data_pre_batch.append(data_temp_b)
+
+    # # print(len(data_pre_batch))
+    return output

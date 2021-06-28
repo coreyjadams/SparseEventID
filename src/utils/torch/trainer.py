@@ -9,13 +9,14 @@ import torch
 
 import datetime
 
-from .iocore import iocore
+# Import most of the IO functions:
+from src.utils.core.trainercore import trainercore
 
-# This uses tensorboardX to save summaries and metrics to tensorboard compatible files.
+import logging
+logger = logging.getLogger()
 
-import tensorboardX
 
-class torch_trainer(iocore):
+class trainer(trainercore):
     '''
     This class is the core interface for training.  Each function to
     be overridden for a particular interface is marked and raises
@@ -23,12 +24,22 @@ class torch_trainer(iocore):
 
     '''
     def __init__(self, args):
-        iocore.__init__(self, args)
+        trainercore.__init__(self, args)
 
         # self.larcv_fetcher = threadloader.thread_interface()
         self._iteration       = 0.
         self._global_step     = -1.
 
+    def init_saver(self):
+
+        self._savers = {}
+
+        # This sets up the summary saver:
+        if self.args.mode.name == "train":
+            self._savers['train'] = torch.utils.tensorboard.SummaryWriter(self.args.run.output_dir + '/train')
+
+            if self._val_data_size is not None:
+                self._savers['val'] = torch.utils.tensorboard.SummaryWriter(self.args.run.output_dir + '/val')
 
 
 
@@ -40,7 +51,6 @@ class torch_trainer(iocore):
         # This sets up the necessary output shape:
         output_shape = self.larcv_fetcher.output_shape('primary')
 
-        print(self.args.network)
 
         # To initialize the network, we see what the name is
         # and act on that:
@@ -65,121 +75,21 @@ class torch_trainer(iocore):
         else:
             raise Exception(f"Couldn't identify network {self.args.network.name}")
 
-        self.print(self._net)
+        logger.info(self._net)
 
 
-        if self.args.training:
+        if self.args.mode.name == "train":
             self._net.train(True)
 
-        if self.args.compute_mode == "CPU":
+        if self.args.run.compute_mode == "CPU":
             pass
-        if self.args.compute_mode == "GPU":
+        if self.args.run.compute_mode == "GPU":
             self._net.cuda()
-
-    def build_lr_schedule(self, learning_rate_schedule = None):
-        # Define the learning rate sequence:
-
-        if learning_rate_schedule is None:
-            learning_rate_schedule = {
-                'warm_up' : {
-                    'function'      : 'linear',
-                    'start'         : 0,
-                    'n_epochs'      : 1,
-                    'initial_rate'  : 0.00001,
-                },
-                'flat' : {
-                    'function'      : 'flat',
-                    'start'         : 1,
-                    'n_epochs'      : 20,
-                },
-                'decay' : {
-                    'function'      : 'decay',
-                    'start'         : 21,
-                    'n_epochs'      : 4,
-                    'floor'         : 0.00001,
-                    'decay_rate'    : 0.999
-                },
-            }
-
-
-        # one_cycle_schedule = {
-        #     'ramp_up' : {
-        #         'function'      : 'linear',
-        #         'start'         : 0,
-        #         'n_epochs'      : 10,
-        #         'initial_rate'  : 0.00001,
-        #         'final_rate'    : 0.001,
-        #     },
-        #     'ramp_down' : {
-        #         'function'      : 'linear',
-        #         'start'         : 10,
-        #         'n_epochs'      : 10,
-        #         'initial_rate'  : 0.001,
-        #         'final_rate'    : 0.00001,
-        #     },
-        #     'decay' : {
-        #         'function'      : 'decay',
-        #         'start'         : 20,
-        #         'n_epochs'      : 5,
-        #         'rate'          : 0.00001
-        #         'floor'         : 0.00001,
-        #         'decay_rate'    : 0.99
-        #     },
-        # }
-        # learning_rate_schedule = one_cycle_schedule
-
-        # We build up the functions we need piecewise:
-        func_list = []
-        cond_list = []
-
-        for i, key in enumerate(learning_rate_schedule):
-
-            # First, create the condition for this stage
-            start    = learning_rate_schedule[key]['start']
-            length   = learning_rate_schedule[key]['n_epochs']
-
-            if i +1 == len(learning_rate_schedule):
-                # Make sure the condition is open ended if this is the last stage
-                condition = lambda x, s=start, l=length: x >= s
-            else:
-                # otherwise bounded
-                condition = lambda x, s=start, l=length: x >= s and x < s + l
-
-
-            if learning_rate_schedule[key]['function'] == 'linear':
-
-                initial_rate = learning_rate_schedule[key]['initial_rate']
-                if 'final_rate' in learning_rate_schedule[key]: final_rate = learning_rate_schedule[key]['final_rate']
-                else: final_rate = self.args.learning_rate
-
-                function = lambda x, s=start, l=length, i=initial_rate, f=final_rate : numpy.interp(x, [s, s + l] ,[i, f] )
-
-            elif learning_rate_schedule[key]['function'] == 'flat':
-                if 'rate' in learning_rate_schedule[key]: rate = learning_rate_schedule[key]['rate']
-                else: rate = self.args.learning_rate
-
-                function = lambda x : rate
-
-            elif learning_rate_schedule[key]['function'] == 'decay':
-                decay    = learning_rate_schedule[key]['decay_rate']
-                floor    = learning_rate_schedule[key]['floor']
-                if 'rate' in learning_rate_schedule[key]: rate = learning_rate_schedule[key]['rate']
-                else: rate = self.args.learning_rate
-
-                function = lambda x, s=start, d=decay, f=floor: (rate-f) * numpy.exp( -(d * (x - s))) + f
-
-            cond_list.append(condition)
-            func_list.append(function)
-
-        self.lr_calculator = lambda x: numpy.piecewise(
-            x * (self.args.minibatch_size / self._train_data_size),
-            [c(x * (self.args.minibatch_size / self._train_data_size)) for c in cond_list], func_list)
-
 
     def initialize(self, io_only=False):
 
 
-        iocore.initialize(self, io_only)
+        trainercore.initialize(self, io_only)
 
         if io_only:
             return
@@ -190,7 +100,7 @@ class torch_trainer(iocore):
         n_trainable_parameters = 0
         for var in self._net.parameters():
             n_trainable_parameters += numpy.prod(var.shape)
-        self.print("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
+        logger.info("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
 
         self.init_optimizer()
 
@@ -204,19 +114,16 @@ class torch_trainer(iocore):
             self._global_step = 0
 
 
-        if self.args.label_mode == 'all':
-            self._log_keys = ['loss', 'accuracy']
-        elif self.args.label_mode == 'split':
-            self._log_keys = ['loss']
-            for key in self.larcv_fetcher.keyword_label:
-                self._log_keys.append('acc/{}'.format(key))
+        self._log_keys = ['loss']
+        for key in self.larcv_fetcher.keyword_label:
+            self._log_keys.append('acc/{}'.format(key))
 
 
     def get_device(self):
         # Convert the input data to torch tensors
-        if self.args.compute_mode == "GPU":
+        if self.args.run.compute_mode == "GPU":
             device = torch.device('cuda')
-            # self.print(device)
+            # logger.info(device)
         else:
             device = torch.device('cpu')
 
@@ -228,12 +135,10 @@ class torch_trainer(iocore):
         self.build_lr_schedule()
 
         # Create an optimizer:
-        if self.args.optimizer == "SDG":
-            self._opt = torch.optim.SGD(self._net.parameters(), lr = 1.0,
-                weight_decay=self.args.weight_decay)
+        if self.args.mode.optimizer.name.upper() == "SDG":
+            self._opt = torch.optim.SGD(self._net.parameters(), lr = 1.0)
         else:
-            self._opt = torch.optim.Adam(self._net.parameters(), lr = 1.0,
-                weight_decay=self.args.weight_decay)
+            self._opt = torch.optim.Adam(self._net.parameters(), lr = 1.0)
 
         self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(self._opt, self.lr_calculator, last_epoch=-1)
 
@@ -242,38 +147,15 @@ class torch_trainer(iocore):
 
         device = self.get_device()
 
-        if self.args.loss_mode == "focal":
-            reduction = "none"
-        else:
-            reduction = "mean"
-
-        # here we store the loss weights:
-        if self.args.label_mode == 'all':
-            self._criterion = torch.nn.CrossEntropyLoss(reduction=reduction)
-
-
-        elif self.args.label_mode == 'split':
-            # # These are the raw category occurences
-            self._label_weights = {
-                'label_cpi'  : torch.tensor([50932., 61269.], device=device),
-                'label_prot' : torch.tensor([36583., 46790., 28828.], device=device),
-                'label_npi'  : torch.tensor([70572., 41629.], device=device),
-                'label_neut' : torch.tensor([39452., 39094., 33655.], device=device)
-            }
-            #
-            self._criterion = torch.nn.CrossEntropyLoss(reduction = reduction)
-
-    def focal_loss(self, loss, logits, target, num_classes):
-
-        softmax = torch.nn.functional.softmax(logits.float(), dim=1)
-        onehot  = torch.nn.functional.one_hot(target, num_classes=num_classes)
-        weights = onehot * (1 - softmax)**2
-        weights = torch.mean(weights, dim=1)
-
-        loss = weights * loss
-        loss = torch.mean(loss)
-
-        return loss
+        # These are the raw category occurences
+        self._label_weights = {
+            'label_cpi'  : torch.tensor([50932., 61269.], device=device),
+            'label_prot' : torch.tensor([36583., 46790., 28828.], device=device),
+            'label_npi'  : torch.tensor([70572., 41629.], device=device),
+            'label_neut' : torch.tensor([39452., 39094., 33655.], device=device)
+        }
+        #
+        self._criterion = torch.nn.CrossEntropyLoss()
 
 
     def _calculate_loss(self, inputs, logits):
@@ -291,23 +173,16 @@ class torch_trainer(iocore):
 
 
 
-        if self.args.label_mode == 'all':
-            values, target = torch.max(inputs[self.args.keyword_label], dim = 1)
-            loss = self._criterion(logits, target=target)
-            if self.args.loss_mode == "focal":
-                loss = self.focal_loss(loss, logits, target, num_classes = 36)
-        elif self.args.label_mode == 'split':
-            loss = None
-            for key in logits:
-                values, target = torch.max(inputs[key], dim=1)
-                temp_loss = self._criterion(logits[key], target = target)
-                if self.args.loss_mode == "focal":
-                    temp_loss = self.focal_loss(temp_loss, logits[key], target, num_classes=self.num_classes[key])
+        loss = None
+        for key in logits:
+            print(logits[key].shape)
+            values, target = torch.max(inputs[key], dim=1)
+            temp_loss = self._criterion(logits[key], target = target)
 
-                if loss is None:
-                    loss = temp_loss
-                else:
-                    loss += temp_loss
+            if loss is None:
+                loss = temp_loss
+            else:
+                loss += temp_loss
 
         return loss
 
@@ -319,21 +194,13 @@ class torch_trainer(iocore):
 
         # Compare how often the input label and the output prediction agree:
 
-        if self.args.label_mode == 'all':
+        accuracy = {}
+        for key in logits:
 
-            values, indices = torch.max(minibatch_data[self.args.keyword_label], dim = 1)
-            values, predict = torch.max(logits, dim=1)
+            values, indices = torch.max(minibatch_data[key], dim = 1)
+            values, predict = torch.max(logits[key], dim=1)
             correct_prediction = torch.eq(predict,indices)
-            accuracy = torch.mean(correct_prediction.float())
-
-        elif self.args.label_mode == 'split':
-            accuracy = {}
-            for key in logits:
-
-                values, indices = torch.max(minibatch_data[key], dim = 1)
-                values, predict = torch.max(logits[key], dim=1)
-                correct_prediction = torch.eq(predict,indices)
-                accuracy[key] = torch.mean(correct_prediction.float())
+            accuracy[key] = torch.mean(correct_prediction.float())
 
         return accuracy
 
@@ -345,11 +212,8 @@ class torch_trainer(iocore):
 
         metrics['loss']     = loss.data
         accuracy = self._calculate_accuracy(logits, minibatch_data)
-        if self.args.label_mode == 'all':
-            metrics['accuracy'] = accuracy
-        elif self.args.label_mode == 'split':
-            for key in accuracy:
-                metrics['acc/{}'.format(key)] = accuracy[key]
+        for key in accuracy:
+            metrics['acc/{}'.format(key)] = accuracy[key]
 
         return metrics
 
@@ -374,7 +238,7 @@ class torch_trainer(iocore):
     def to_torch(self, minibatch_data, device=None):
 
         # Convert the input data to torch tensors
-        if self.args.compute_mode == "GPU":
+        if self.args.run.compute_mode == "GPU":
             if device is None:
                 device = torch.device('cuda')
             # print(device)
@@ -384,10 +248,11 @@ class torch_trainer(iocore):
                 device = torch.device('cpu')
 
 
+
         for key in minibatch_data:
             if key == 'entries' or key =='event_ids':
                 continue
-            if key == 'image' and self.args.image_mode == "sparse":
+            if key == 'image' and self.args.framework.sparse:
                 if self.args.input_dimension == 3:
                     minibatch_data['image'] = (
                             torch.tensor(minibatch_data['image'][0]).long(),
@@ -400,8 +265,8 @@ class torch_trainer(iocore):
                             torch.tensor(minibatch_data['image'][1], device=device),
                             minibatch_data['image'][2],
                         )
-            elif key == 'image' and self.args.image_mode == 'graph':
-                minibatch_data[key] = minibatch_data[key].to(device)
+            elif key == 'image' and self.args.network.data_format == 'graph':
+                minibatch_data[key] = [ torch.tensor(m, device=device) for m in minibatch_data[key]]
             else:
                 minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
 
@@ -477,11 +342,11 @@ class torch_trainer(iocore):
         metrics['step_time'] = (global_end_time - step_start_time).total_seconds()
 
 
-        self.log(metrics, saver="train")
+        self.log(metrics, kind="Train")
 
         # print("Completed Log")
 
-        self.summary(metrics, saver="train")
+        self.summary(metrics, kind="Train")
 
         # print("Summarized")
 
@@ -495,13 +360,24 @@ class torch_trainer(iocore):
 
         return metrics
 
+    def summary(self, metrics, kind):
+        '''kind should be a string
+        metrics should be a dict
+        '''
+
+
+        if kind in self._savers:
+            for metric in metrics.keys():
+                self._savers[kind].add_scaler(metric, metrics[metric], self._global_step)
+
+
     def val_step(self, n_iterations=1):
 
         # First, validation only occurs on training:
-        if not self.args.training: return
+        if self.args.mode.name != "train": return
 
         # Second, validation can not occur without a validation dataloader.
-        if self.args.aux_file is None: return
+        if self._val_data_size is None: return
 
         # perform a validation step
         # Validation steps can optionally accumulate over several minibatches, to
@@ -538,8 +414,8 @@ class torch_trainer(iocore):
                 metrics = self._compute_metrics(logits, minibatch_data, loss)
 
 
-                self.log(metrics, saver="test")
-                self.summary(metrics, saver="test")
+                self.log(metrics, kind="test")
+                self.summary(metrics, kind="test")
 
                 return metrics
 
@@ -558,33 +434,150 @@ class torch_trainer(iocore):
             self.save_model()
 
 
+
+    def restore_model(self):
+        ''' This function attempts to restore the model from file
+        '''
+
+        _, checkpoint_file_path = self.get_model_filepath()
+
+        logger.info(checkpoint_file_path)
+
+        if not os.path.isfile(checkpoint_file_path):
+            logger.info("No model to load, starting from scratch!")
+            return None
+        # Parse the checkpoint file and use that to get the latest file path
+
+        with open(checkpoint_file_path, 'r') as _ckp:
+            for line in _ckp.readlines():
+                if line.startswith("latest: "):
+                    chkp_file = line.replace("latest: ", "").rstrip('\n')
+                    chkp_file = os.path.dirname(checkpoint_file_path) + "/" + chkp_file
+                    logger.info("Restoring weights from ", chkp_file)
+                    break
+
+        if self.args.compute_mode == "CPU":
+            state = torch.load(chkp_file, map_location='cpu')
+        else:
+            state = torch.load(chkp_file)
+
+        return state
+
+    def load_state(self, state):
+
+
+        self._net.load_state_dict(state['state_dict'])
+        self._opt.load_state_dict(state['optimizer'])
+        self.lr_scheduler.load_state_dict(state['scheduler'])
+        self._global_step = state['global_step']
+
+        # If using GPUs, move the model to GPU:
+        if self.args.compute_mode == "GPU":
+            for state in self._opt.state.values():
+                for k, v in state.items():
+                    if torch.is_tensor(v):
+                        state[k] = v.cuda()
+
+        return True
+
+
+    def save_model(self):
+        '''Save the model to file
+
+        '''
+
+        current_file_path, checkpoint_file_path = self.get_model_filepath()
+
+        # save the model state into the file path:
+        state_dict = {
+            'global_step' : self._global_step,
+            'state_dict'  : self._net.state_dict(),
+            'optimizer'   : self._opt.state_dict(),
+            'scheduler'   : self.lr_scheduler.state_dict(),
+        }
+
+        # Make sure the path actually exists:
+        if not os.path.isdir(os.path.dirname(current_file_path)):
+            os.makedirs(os.path.dirname(current_file_path))
+
+        torch.save(state_dict, current_file_path)
+
+        # Parse the checkpoint file to see what the last checkpoints were:
+
+        # Keep only the last 5 checkpoints
+        n_keep = 100
+
+
+        past_checkpoint_files = {}
+        try:
+            with open(checkpoint_file_path, 'r') as _chkpt:
+                for line in _chkpt.readlines():
+                    line = line.rstrip('\n')
+                    vals = line.split(":")
+                    if vals[0] != 'latest':
+                        past_checkpoint_files.update({int(vals[0]) : vals[1].replace(' ', '')})
+        except:
+            pass
+
+
+        # Remove the oldest checkpoints while the number is greater than n_keep
+        while len(past_checkpoint_files) >= n_keep:
+            min_index = min(past_checkpoint_files.keys())
+            file_to_remove = os.path.dirname(checkpoint_file_path) + "/" + past_checkpoint_files[min_index]
+            os.remove(file_to_remove)
+            past_checkpoint_files.pop(min_index)
+
+
+
+        # Update the checkpoint file
+        with open(checkpoint_file_path, 'w') as _chkpt:
+            _chkpt.write('latest: {}\n'.format(os.path.basename(current_file_path)))
+            _chkpt.write('{}: {}\n'.format(self._global_step, os.path.basename(current_file_path)))
+            for key in past_checkpoint_files:
+                _chkpt.write('{}: {}\n'.format(key, past_checkpoint_files[key]))
+
+
+    def get_model_filepath(self):
+        '''Helper function to build the filepath of a model for saving and restoring:
+
+        '''
+
+
+        # Find the base path of the log directory
+        file_path= self.args.run.output_dir  + "/checkpoints/"
+
+
+        name = file_path + 'model-{}.ckpt'.format(self._global_step)
+        checkpoint_file_path = file_path + "checkpoint"
+
+        return name, checkpoint_file_path
+
+
     def batch_process(self):
 
         # If we're not training, force the number of iterations to the epoch size or less
-        if not self.args.training:
-            if self.args.iterations > int(self._train_data_size/self.args.minibatch_size) + 1:
-                self.args.iterations = int(self._train_data_size/self.args.minibatch_size) + 1
-                self.print('Number of iterations set to', self.args.iterations)
+        if self.args.mode.name != "train":
+            if self.args.run.iterations > int(self._train_data_size/self.args.minibatch_size) + 1:
+                self.args.run.iterations = int(self._train_data_size/self.args.minibatch_size) + 1
+                logger.info('Number of iterations set to', self.args.run.iterations)
 
         start = time.time()
         # Run iterations
-        for i in range(self.args.iterations):
-            if self.args.training and self._iteration >= self.args.iterations:
-                self.print('Finished training (iteration %d)' % self._iteration)
+        for i in range(self.args.run.iterations):
+            if self.args.mode.name == "train" and self._iteration >= self.args.run.iterations:
+                logger.info('Finished training (iteration %d)' % self._iteration)
                 self.checkpoint()
                 break
 
-            if self.args.training:
+            if self.args.mode.name == "train":
                 self.val_step()
                 self.train_step()
                 self.checkpoint()
             else:
                 self.ana_step(i)
 
-        self.print("Total time to batch process: ", time.time() - start)
+        logger.info("Total time to batch process: ", time.time() - start)
 
-        if self.args.training:
-            if self._saver is not None:
-                self._saver.close()
-            if self._aux_saver is not None:
-                self._aux_saver.close()
+        # Close savers:
+        for saver in self._savers: saver.close()
+

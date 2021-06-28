@@ -9,8 +9,6 @@ from . larcvio   import larcv_fetcher
 
 import datetime
 
-# This uses tensorboardX to save summaries and metrics to tensorboard compatible files.
-import tensorboardX
 
 
 class iocore(object):
@@ -19,29 +17,22 @@ class iocore(object):
     Each function to be overridden for a particular interface is
     marked and raises a NotImplemented error.
 
-    It also handles the IO of torch models, saving and restoring, etc.
 
     '''
     def __init__(self, args):
         self.args = args
+
+        dataset = self.args.dataset
+
         self.larcv_fetcher = larcv_fetcher.larcv_fetcher(
-            mode            = args.mode,
-            distributed     = args.distributed,
-            image_mode      = args.image_mode,
-            label_mode      = self.args.label_mode,
-            input_dimension = self.args.input_dimension,
+            mode            = args.mode.name,
+            distributed     = args.run.distributed,
+            dataset         = self.args.dataset,
         )
 
 
 
 
-    def print(self, *argv):
-        ''' Function for logging as needed.  Works correctly in distributed mode'''
-
-        message = " ".join([ str(s) for s in argv] )
-
-        sys.stdout.write(message + "\n")
-        sys.stdout.flush()
 
 
     def _initialize_io(self, color=0):
@@ -138,129 +129,6 @@ class iocore(object):
         # self._saver.add_graph(self._net, (dummy_input,))
 
         # Here, either restore the weights of the network or initialize it:
-
-
-    def restore_model(self):
-        ''' This function attempts to restore the model from file
-        '''
-
-        _, checkpoint_file_path = self.get_model_filepath()
-
-        self.print(checkpoint_file_path)
-
-        if not os.path.isfile(checkpoint_file_path):
-            self.print("Returning none!")
-            return None
-        # Parse the checkpoint file and use that to get the latest file path
-
-        with open(checkpoint_file_path, 'r') as _ckp:
-            for line in _ckp.readlines():
-                if line.startswith("latest: "):
-                    chkp_file = line.replace("latest: ", "").rstrip('\n')
-                    chkp_file = os.path.dirname(checkpoint_file_path) + "/" + chkp_file
-                    self.print("Restoring weights from ", chkp_file)
-                    break
-
-        if self.args.compute_mode == "CPU":
-            state = torch.load(chkp_file, map_location='cpu')
-        else:
-            state = torch.load(chkp_file)
-
-        return state
-
-    def load_state(self, state):
-
-
-        self._net.load_state_dict(state['state_dict'])
-        self._opt.load_state_dict(state['optimizer'])
-        self.lr_scheduler.load_state_dict(state['scheduler'])
-        self._global_step = state['global_step']
-
-        # If using GPUs, move the model to GPU:
-        if self.args.compute_mode == "GPU":
-            for state in self._opt.state.values():
-                for k, v in state.items():
-                    if torch.is_tensor(v):
-                        state[k] = v.cuda()
-
-        return True
-
-
-    def save_model(self):
-        '''Save the model to file
-
-        '''
-
-        current_file_path, checkpoint_file_path = self.get_model_filepath()
-
-        # save the model state into the file path:
-        state_dict = {
-            'global_step' : self._global_step,
-            'state_dict'  : self._net.state_dict(),
-            'optimizer'   : self._opt.state_dict(),
-            'scheduler'   : self.lr_scheduler.state_dict(),
-        }
-
-        # Make sure the path actually exists:
-        if not os.path.isdir(os.path.dirname(current_file_path)):
-            os.makedirs(os.path.dirname(current_file_path))
-
-        torch.save(state_dict, current_file_path)
-
-        # Parse the checkpoint file to see what the last checkpoints were:
-
-        # Keep only the last 5 checkpoints
-        n_keep = 100
-
-
-        past_checkpoint_files = {}
-        try:
-            with open(checkpoint_file_path, 'r') as _chkpt:
-                for line in _chkpt.readlines():
-                    line = line.rstrip('\n')
-                    vals = line.split(":")
-                    if vals[0] != 'latest':
-                        past_checkpoint_files.update({int(vals[0]) : vals[1].replace(' ', '')})
-        except:
-            pass
-
-
-        # Remove the oldest checkpoints while the number is greater than n_keep
-        while len(past_checkpoint_files) >= n_keep:
-            min_index = min(past_checkpoint_files.keys())
-            file_to_remove = os.path.dirname(checkpoint_file_path) + "/" + past_checkpoint_files[min_index]
-            os.remove(file_to_remove)
-            past_checkpoint_files.pop(min_index)
-
-
-
-        # Update the checkpoint file
-        with open(checkpoint_file_path, 'w') as _chkpt:
-            _chkpt.write('latest: {}\n'.format(os.path.basename(current_file_path)))
-            _chkpt.write('{}: {}\n'.format(self._global_step, os.path.basename(current_file_path)))
-            for key in past_checkpoint_files:
-                _chkpt.write('{}: {}\n'.format(key, past_checkpoint_files[key]))
-
-
-    def get_model_filepath(self):
-        '''Helper function to build the filepath of a model for saving and restoring:
-
-
-        '''
-
-
-
-        # Find the base path of the log directory
-        if self.args.checkpoint_directory == None:
-            file_path= self.args.log_directory  + "/checkpoints/"
-        else:
-            file_path= self.args.checkpoint_directory  + "/checkpoints/"
-
-
-        name = file_path + 'model-{}.ckpt'.format(self._global_step)
-        checkpoint_file_path = file_path + "checkpoint"
-
-        return name, checkpoint_file_path
 
 
     def log(self, metrics, saver=''):

@@ -1,326 +1,225 @@
+
 #!/usr/bin/env python
 import os,sys,signal
 import time
-
 import pathlib
+import logging
+from logging import handlers
 
 import numpy
+
+# For configuration:
+from omegaconf import DictConfig, OmegaConf
+import hydra
+
+#############################
 
 # Add the local folder to the import path:
 network_dir = os.path.dirname(os.path.abspath(__file__))
 network_dir = os.path.dirname(network_dir)
 sys.path.insert(0,network_dir)
 
-# import the necessary
-from src.networks import resnet
-from src.networks import sparseresnet
-from src.networks import sparseresnet3d
-from src.networks import pointnet
-# from src.networks import gcn
-from src.networks import dgcnn
-
 
 import argparse
 
 class SparseEventID(object):
 
-    def __init__(self):
+    def __init__(self, config):
 
-        # This technique is taken from: https://chase-seibert.github.io/blog/2014/03/21/python-multilevel-argparse.html
-        parser = argparse.ArgumentParser(
-            description='Run neural networks on Sparse Event ID dataset',
-            usage='''exec.py <command> [<args>]
+        self.args = config
 
-The most commonly used commands are:
-   train      Train a network, either from scratch or restart
-   inference  Run inference with a trained network
-   iotest     Run IO testing without training a network
-''')
-        parser.add_argument('command', help='Subcommand to run')
-        # parse_args defaults to [1:] for args, but you need to
-        # exclude the rest of the args too, or validation will fail
-        args = parser.parse_args(sys.argv[1:2])
-        if not hasattr(self, args.command):
-            print(f'Unrecognized command {args.command}')
-            parser.print_help()
-            exit(1)
-        # use dispatch pattern to invoke method with same name
-        getattr(self, args.command)()
+        rank = self.init_mpi()
+
+        # Create the output directory if needed:
+        if rank == 0:
+            outpath = pathlib.Path(self.args.run.output_dir)
+            outpath.mkdir(exist_ok=True, parents=True)
+
+        self.configure_logger(rank)
+
+        self.validate_arguments()
+
+        if config.mode.name == "train":
+            self.train()
+        if config.mode.name == "iotest":
+            self.iotest()
+
+
+
+    def init_mpi(self):
+        if not self.args.run.distributed:
+            return 0
+        else:
+            from mpi4py import MPI
+            comm = MPI.COMM_WORLD
+            return comm.Get_rank()
+
+
+    def configure_logger(self, rank):
+
+        logger = logging.getLogger()
+
+        # Create a handler for STDOUT, but only on the root rank.
+        # If not distributed, we still get 0 passed in here.
+        if rank == 0:
+            stream_handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            stream_handler.setFormatter(formatter)
+            handler = handlers.MemoryHandler(capacity = 0, target=stream_handler)
+            logger.addHandler(handler)
+
+            # Add a file handler too:
+            log_file = self.args.run.output_dir + "/process.log"
+            file_handler = logging.FileHandler(log_file)
+            file_handler.setFormatter(formatter)
+            file_handler = handlers.MemoryHandler(capacity=10, target=file_handler)
+            logger.addHandler(file_handler)
+
+            logger.setLevel(logging.INFO)
+        else:
+            # in this case, MPI is available but it's not rank 0
+            # create a null handler
+            handler = logging.NullHandler()
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
 
 
     def train(self):
-        self.parser = argparse.ArgumentParser(
-            description     = 'Run Network Training',
-            formatter_class = argparse.ArgumentDefaultsHelpFormatter)
 
-        self.add_io_arguments(self.parser)
-        self.add_core_configuration(self.parser)
+        logger = logging.getLogger()
 
-        # Define parameters exclusive to training:
-
-        self.parser.add_argument('-lr','--learning-rate',
-            type    = float,
-            default = 0.003,
-            help    = 'Initial learning rate')
-        self.parser.add_argument('-si','--summary-iteration',
-            type    = int,
-            default = 1,
-            help    = 'Period (in steps) to store summary in tensorboard log')
-        self.parser.add_argument('-li','--logging-iteration',
-            type    = int,
-            default = 1,
-            help    = 'Period (in steps) to print values to log')
-        self.parser.add_argument('-ci','--checkpoint-iteration',
-            type    = int,
-            default = 100,
-            help    = 'Period (in steps) to store snapshot of weights')
-        self.parser.add_argument('--lr-schedule',
-            type    = str,
-            choices = ['flat', '1cycle', 'triangle_clr', 'exp_range_clr', 'decay', 'expincrease'],
-            default = 'flat',
-            help    = 'Apply a learning rate schedule')
-        self.parser.add_argument('--optimizer',
-            type    = str,
-            choices = ['Adam', 'SGD'],
-            default = 'Adam',
-            help    = 'Optimizer to use')
-        self.parser.add_argument('-cd','--checkpoint-directory',
-            default = None,
-            help    = 'Prefix (directory + file prefix) for snapshots of weights')
-        self.parser.add_argument('--weight-decay',
-            type    = float,
-            default = 0.0,
-            help    = "Weight decay strength")
-        self.parser.add_argument("--loss-mode",
-            type    = str,
-            default = 'mean',
-            choices = ['mean', 'focal'],
-            help    = "Configure the loss averaging scheme between batches.")
-
-
-
-
-        self.add_network_parsers(self.parser)
-
-        self.args = self.parser.parse_args(sys.argv[2:])
-        self.args.training = True
-        self.args.mode = "train"
+        logger.info("Running Training")
+        logger.info(self.__str__())
 
         self.make_trainer()
-
-        self.trainer.print("Running Training")
-        self.trainer.print(self.__str__())
 
         self.trainer.initialize()
         self.trainer.batch_process()
 
 
-    def add_network_parsers(self, parser):
-        # Here, we define the networks available.  In io test mode, used to determine what the IO is.
-        network_parser = parser.add_subparsers(
-            title          = "Networks",
-            dest           = "network",
-            description    = 'Which network architecture to use.')
-
-        # Here, we do a switch on the networks allowed:
-        resnet.ResNetFlags().build_parser(network_parser)
-        sparseresnet.ResNetFlags().build_parser(network_parser)
-        sparseresnet3d.ResNetFlags().build_parser(network_parser)
-        pointnet.PointNetFlags().build_parser(network_parser)
-        # gcn.GCNFlags().build_parser(network_parser)
-        dgcnn.DGCNNFlags().build_parser(network_parser)
-
-
     def iotest(self):
-        self.parser = argparse.ArgumentParser(
-            description     = 'Run IO Testing',
-            formatter_class = argparse.ArgumentDefaultsHelpFormatter)
-        self.add_io_arguments(self.parser)
-        self.add_core_configuration(self.parser)
 
-        # now that we're inside a subcommand, ignore the first
-        # TWO argvs, ie the command (exec.py) and the subcommand (iotest)
-        self.args = self.parser.parse_args(sys.argv[2:])
-        self.args.training = False
-        self.args.mode = "iotest"
+        logger = logging.getLogger()
+
+        logger.info("Running IO Test")
+        logger.info(self.__str__())
 
         self.make_trainer()
 
-        self.trainer.print("Running IO Test")
-        self.trainer.print(self.__str__())
-
-
         self.trainer.initialize(io_only=True)
 
+        if self.args.run.distributed:
+            from mpi4py import MPI
+            rank = MPI.COMM_WORLD.Get_rank()
+        else:
+            rank = 0
+
+        # label_stats = numpy.zeros((36,))
         global_start = time.time()
         time.sleep(0.1)
-        for i in range(self.args.iterations):
+        for i in range(self.args.run.iterations):
             start = time.time()
-            mb = self.trainer.larcv_fetcher.fetch_next_batch("primary", force_pop=True)
+            mb = self.trainer.larcv_fetcher.fetch_next_batch("train", force_pop=True)
 
             end = time.time()
 
-            self.trainer.print(i, ": Time to fetch a minibatch of data: {}".format(end - start))
+            logger.info(f"{i}: Time to fetch a minibatch of data: {end - start:.2f}s")
 
-        self.trainer.print("Total IO Time: ", time.time() - global_start)
+        logger.info(f"Total IO Time: {time.time() - global_start:.2f}s")
+
+
+
 
     def make_trainer(self):
 
-        if self.args.mode == "iotest":
-            from src.utils import iocore
+        if self.args.mode.name == "iotest":
+            from src.utils.core import iocore
 
             self.trainer = iocore.iocore(self.args)
+            return
 
-        # Add to the log directory the model name, if it's not already present:
-        if self.args.network not in self.args.log_directory:
-            self.args.log_directory += "/" + self.args.network
+        if self.args.framework.name == "tensorflow":
 
-        if self.args.distributed:
-            if self.args.distributed_backend == "horovod":
-                import horovod.torch as hvd
-                hvd.init()
-                os.environ['CUDA_VISIBLE_DEVICES'] = str(hvd.local_rank())
+            # Import tensorflow and see what the version is.
+            import tensorflow as tf
 
-            from src.utils import distributed_trainer
+            if self.args.run.distributed:
+                from src.utils.tensorflow import distributed_trainer
+                self.trainer = distributed_trainer.distributed_trainer(self.args)
+            else:
+                from src.utils.tensorflow import trainer
+                self.trainer = trainer.trainer(self.args)
+           
 
-            self.trainer = distributed_trainer.distributed_trainer(self.args)
-        else:
-            from src.utils import torch_trainer
-            self.trainer = torch_trainer.torch_trainer(self.args)
+        elif self.args.framework.name == "torch":
+            if self.args.run.distributed:
+                from src.utils.torch import distributed_trainer
+                self.trainer = distributed_trainer.distributed_trainer(self.args)
+            else:
+                from src.utils.torch import trainer
+                self.trainer = trainer.trainer(self.args)
 
-    def inference(self):
+
+
+
+    def dictionary_to_str(self, in_dict, indentation = 0):
+        substr = ""
+        for key in sorted(in_dict.keys()):
+            if type(in_dict[key]) == DictConfig or type(in_dict[key]) == dict:
+                s = "{none:{fill1}{align1}{width1}}{key}: \n".format(
+                        none="", fill1=" ", align1="<", width1=indentation, key=key
+                    )
+                substr += s + self.dictionary_to_str(in_dict[key], indentation=indentation+2)
+            else:
+                s = '{none:{fill1}{align1}{width1}}{message:{fill2}{align2}{width2}}: {attr}\n'.format(
+                   none= "",
+                   fill1=" ",
+                   align1="<",
+                   width1=indentation,
+                   message=key,
+                   fill2='.',
+                   align2='<',
+                   width2=30-indentation,
+                   attr = in_dict[key],
+                )
+                substr += s
+        return substr
+
+    def __str__(self):
+
+        s = "\n\n-- CONFIG --\n"
+        substring = s +  self.dictionary_to_str(self.args)
+
+        return substring
+
+
+
+
+    def validate_arguments(self):
+
+
+        # if self.args.framework.name == "torch":
+        #     # In torch, only option is channels first:
+        #     if self.args.data.data_format == "channels_last":
+        #         print("Torch requires channels_first, switching automatically")
+        #         self.args.data.data_format = "channels_first"
+
         pass
 
 
-    def __str__(self):
-        s = "\n\n-- CONFIG --\n"
-        for name in iter(sorted(vars(self.args))):
-            # if name != name.upper(): continue
-            attribute = getattr(self.args,name)
-            # if type(attribute) == type(self.parser): continue
-            # s += " %s = %r\n" % (name, getattr(self, name))
-            substring = ' {message:{fill}{align}{width}}: {attr}\n'.format(
-                   message=name,
-                   attr = getattr(self.args, name),
-                   fill='.',
-                   align='<',
-                   width=30,
-                )
-            s += substring
-        return s
-
-    def stop(self):
-        if not self.args.distributed:
-            self.trainer.stop()
 
 
 
-    def add_core_configuration(self, parser):
-        # These are core parameters that are important for all modes:
-        parser.add_argument('-i', '--iterations',
-            type    = int,
-            default = 5000,
-            help    = "Number of iterations to process")
+@hydra.main(config_path="../src/config", config_name="config")
+def main(cfg : OmegaConf) -> None:
 
-        parser.add_argument('-d','--distributed',
-            action  = 'store_true',
-            default = False,
-            help    = "Run with the MPI compatible mode")
-
-        parser.add_argument('--distributed-backend',
-            type    = str,
-            default = 'horovod',
-            choices = ['horovod', 'DDP'],
-            help    = "Use horovod or torch's native DDP for data-parallel training.")
-
-        parser.add_argument('-m','--compute-mode',
-            type    = str,
-            choices = ['CPU','GPU'],
-            default = 'CPU',
-            help    = "Selection of compute device, CPU or GPU ")
-        parser.add_argument('-im','--image-mode',
-            type    = str,
-            choices = ['dense', 'sparse', 'graph'],
-            default = 'sparse',
-            help    = "Input image format to the network, dense or sparse")
-        parser.add_argument('-ld','--log-directory',
-            default ="log/",
-            help    ="Prefix (directory) for logging information")
-
-
-        return parser
-
-    def add_io_arguments(self, parser):
-
-        # IO PARAMETERS FOR INPUT:
-        parser.add_argument('-f','--file',
-            type    = pathlib.Path,
-            default = "/not/a/file",
-            help    = "IO Input File")
-        parser.add_argument('--input-dimension',
-            type    = int,
-            default = 3,
-            help    = "Dimensionality of data to use",
-            choices = [2, 3] )
-        parser.add_argument('--start-index',
-            type    = int,
-            default = 0,
-            help    = "Start index, only used in inference mode")
-
-        parser.add_argument('--label-mode',
-            type    = str,
-            choices = ['split', 'all'],
-            default = 'split',
-            help    = "Run with split labels (multiple classifiers) or all in one" )
-
-        parser.add_argument('-mb','--minibatch-size',
-            type    = int,
-            default = 2,
-            help    = "Number of images in the minibatch size")
-
-        # IO PARAMETERS FOR AUX INPUT:
-        parser.add_argument('--aux-file',
-            type    = pathlib.Path,
-            default = "/not/a/file",
-            help    = "IO Aux Input File, or output file in inference mode")
-
-
-        parser.add_argument('--aux-iteration',
-            type    = int,
-            default = 10,
-            help    = "Iteration to run the aux operations")
-
-        parser.add_argument('--aux-minibatch-size',
-            type    = int,
-            default = 2,
-            help    = "Number of images in the minibatch size")
-
-        return
-
-
-
-def main():
-
-    FLAGS = flags.FLAGS()
-    FLAGS.parse_args()
-    # FLAGS.dump_config()
-
-
-
-    if FLAGS.MODE is None:
-        raise Exception()
-
-
-
-    if FLAGS.MODE == 'train' or FLAGS.MODE == 'inference':
-
-        trainer.initialize()
-        trainer.batch_process()
-
-
-
+    s = SparseEventID(cfg)
 
 
 if __name__ == '__main__':
-    s = SparseEventID()
-    s.stop()
+    #  Is this good practice?  No.  But hydra doesn't give a great alternative
+    import sys
+    if "--help" not in sys.argv and "--hydra-help" not in sys.argv:
+        sys.argv += ['hydra.run.dir=.', 'hydra/job_logging=disabled']
+    main()
+

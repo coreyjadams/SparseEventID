@@ -1,0 +1,7 @@
+label:          Classification
+data_directory: /Users/corey.adams/data/DUNE/pixsim_small/
+train_file:     test.h5
+test_file:      test.h5
+val_file:       test.h5
+access_mode:    random_blocks
+dimension:      3

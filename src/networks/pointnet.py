@@ -1,119 +1,137 @@
-import os.path as osp
 
 import torch
-import torch.nn.functional as F
-from torch.nn import Sequential as Seq, Linear as Lin, ReLU, BatchNorm1d as BN
-# from torch_geometric.nn import PointConv, fps, radius, global_max_pool
-
-from . network_config import network_config, str2bool
-
-#
-# The 3D convolution method for 2D images is very, very slow.
-# Much faster to use 2D convolutions 3 times
-
-class PointNetFlags(network_config):
-
-    def __init__(self):
-        network_config.__init__(self)
-        self._name = "pointnet"
-        self._help = "PointNet Architecture with extra linear layers for multi-key classification"
-
-    def build_parser(self, network_parser):
-        # this_parser = network_parser
-        this_parser = network_parser.add_parser(self._name, help=self._help)
-
-        # this_parser.add_argument("--n-initial-filters",
-        #     type    = int,
-        #     default = 2,
-        #     help    = "Number of filters applied, per plane, for the initial convolution")
 
 
+class MLP(torch.nn.Module):
+    def __init__(self, input_size, output_size):
+        torch.nn.Module.__init__(self)
+
+        self.mlp = torch.nn.Conv1d(
+            in_channels  = input_size, 
+            out_channels = output_size,
+            kernel_size  = (1))
+
+        self.bn = torch.nn.BatchNorm1d(num_features=output_size)
+
+        self.relu = torch.nn.ReLU()
+
+    def forward(self, data):
+        return self.relu(self.bn(self.mlp(data)))
+
+class TNet(torch.nn.Module):
+    def __init__(self, input_shape, output_shape):
+        torch.nn.Module.__init__(self)
+
+        # Initialize these to small but not zero
+        self.trainable_weights = (0.01/256.)*torch.nn.Parameter(torch.rand([256,output_shape**2]), requires_grad=True)
+
+        self.trainable_biases  = torch.nn.Parameter(torch.eye(output_shape), requires_grad=True)
+
+        self.identity = torch.eye(output_shape)
+
+        self.output_shape = output_shape
+
+        self.mlps = torch.nn.Sequential(
+            MLP(input_shape, 64),
+            MLP(64, 128),
+            MLP(128, 1024),
+        )
+
+        self.fully_connected = torch.nn.Sequential(
+            torch.nn.Linear(1024, 512), torch.nn.ReLU(),
+            torch.nn.Linear(512, 256), torch.nn.ReLU()
+            )
+
+    def forward(self, data):
+
+        x = self.mlps(data)
+
+        shape = x.shape[2:]
+        x = torch.nn.functional.max_pool1d(x, kernel_size=shape)
+        x = torch.squeeze(x)
+
+        x = self.fully_connected(x)
+
+        matrix = torch.matmul(x, self.trainable_weights)
+        matrix = torch.reshape(matrix, (-1, self.output_shape, self.output_shape))
+        matrix = matrix + self.trainable_biases
 
 
+        transpose = torch.transpose(matrix, 1,2)
 
-class SAModule(torch.nn.Module):
-    def __init__(self, ratio, r, nn):
-        import torch_geometric
+        ortho_loss = torch.sum( (self.identity - torch.matmul(matrix, transpose) )**2 )
 
-        super(SAModule, self).__init__()
-        self.ratio = ratio
-        self.r = r
-        self.conv = torch_geometric.nn.PointConv(nn)
-
-    def forward(self, x, pos, batch):
-        import torch_geometric
-
-        idx = torch_geometric.nn.fps(pos, batch, ratio=self.ratio)
-        #print("idx.shape: ", idx.shape)
-        row, col = torch_geometric.nn.radius(pos, pos[idx], self.r, batch, batch[idx],
-                          max_num_neighbors=64)
-        #print("row.shape: ", row.shape)
-        edge_index = torch.stack([col, row], dim=0)
-        #print("edge_index.shape: ", edge_index.shape)
-        x = self.conv(x, (pos, pos[idx]), edge_index)
-        #print("x.shape: ", x.shape)
-
-        pos, batch = pos[idx], batch[idx]
-        return x, pos, batch
-
-
-class GlobalSAModule(torch.nn.Module):
-    def __init__(self, nn):
-        super(GlobalSAModule, self).__init__()
-        self.nn = nn
-
-    def forward(self, x, pos, batch):
-        import torch_geometric
-        x = self.nn(torch.cat([x, pos], dim=1))
-        x = torch_geometric.nn.global_max_pool(x, batch)
-        pos = pos.new_zeros((x.size(0), 3))
-        batch = torch.arange(x.size(0), device=batch.device)
-        return x, pos, batch
-
-
-def MLP(channels, batch_norm=True):
-    return Seq(*[
-        Seq(Lin(channels[i - 1], channels[i]), ReLU(), BN(channels[i]))
-        for i in range(1, len(channels))
-    ])
-
+        return matrix, ortho_loss
 
 class PointNet(torch.nn.Module):
     def __init__(self, output_shape, args):
         torch.nn.Module.__init__(self)
-        # We include 4 entries in the first MLP, three for coordinates and one for pixel value
-        self.sa1_module = SAModule(0.5, 0.2, MLP([4, 64, 64, 128]))
-        self.sa2_module = SAModule(0.25, 0.4, MLP([128 + 3, 128, 128, 256]))
-        self.sa3_module = GlobalSAModule(MLP([256 + 3, 256, 512, 1024]))
 
-        self.lin1 = Lin(1024, 512)
-        self.lin2 = Lin(512, 256)
+        self.tnet0_list = torch.nn.ModuleList([TNet(3, 3) for i in range(3)])
 
-        self.lin3  = { key : Lin(256, output_shape[key][1]) for key in output_shape }
+        self.mlp0_list = [ torch.nn.Sequential(MLP(3, 64), MLP(64, 64))  for i in range(3) ]
 
+        self.tnet1_list = torch.nn.ModuleList([TNet(64, 64) for i in range(3)])
 
-        for key in self.lin3:
-            self.add_module("lin3_{}".format(key), self.lin3[key])
+        self.mlp1_list = [ torch.nn.Sequential(MLP(64, 128), MLP(128, 1024))  for i in range(3) ]
+
+        print(output_shape)
+
+        self.final_mlp = { 
+                key : torch.nn.Sequential(
+                    MLP(3*1024, 512),
+                    MLP(512, 256),
+                    MLP(256, output_shape[key][-1])
+                    )
+                for key in output_shape.keys()
+            }
 
 
     def forward(self, data):
         #print("entered")
-        sa0_out = (data.x, data.pos, data.batch)
-        sa1_out = self.sa1_module(*sa0_out)
-        sa2_out = self.sa2_module(*sa1_out)
-        sa3_out = self.sa3_module(*sa2_out)
-        x, pos, batch = sa3_out
+
+        # in 2D, shape is [batch_size, max_points, x/y/val] x 3 planes
+
+        # in 3D, shape is [batch_size, max_points, x/y/z/val]
 
 
-        x = F.relu(self.lin1(x))
-        x = F.dropout(x, p=0.1, training=self.training)
-        x = F.relu(self.lin2(x))
-        x = F.dropout(x, p=0.1, training=self.training)
+        tnets = [ self.tnet0_list[i](d) for i, d in enumerate(data)] 
+
+        rotations, losses1 = list(zip(*tnets))
 
 
-        output = {}
-        for key in self.lin3:
-            output[key] = self.lin3[key](x)
+        # Now, we have a rotation matrix for each plane.
+        # Apply it to all points.
+        data = [ torch.matmul(r, p) for r, p in zip(rotations, data)]
 
 
-        return output
+        # Now apply the MLP to 64 features:
+        data = [ self.mlp0_list[i](d) for i, d in enumerate(data)] 
+
+        # Now, another TNet call:
+
+        tnets = [self.tnet1_list[i](d) for i, d in enumerate(data)]
+
+        rotations, losses2 = list(zip(*tnets))
+        # Apply the new rotations:
+        data = [ torch.matmul(r, p) for r, p in zip(rotations, data)]
+
+
+
+
+        # The next MLPs:
+        data = [ self.mlp1_list[i](d) for i, d in enumerate(data)] 
+
+        # Next, we maxpool over each plane:
+        shape = data[0].shape[2:]
+        data = [ torch.squeeze(torch.nn.functional.max_pool1d(d, kernel_size=shape)) for d in data ]
+
+        # For the outputs, we concatenate across all 3 planes and have a unique series of MLPs for each
+        # Category of output
+
+        data = torch.cat(data, axis=-1)
+        data = torch.reshape(data, data.shape + (1,))
+
+        outputs = { key : torch.squeeze(self.final_mlp[key](data)) for key in self.final_mlp.keys() }
+
+        return outputs

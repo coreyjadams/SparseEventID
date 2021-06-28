@@ -6,7 +6,7 @@ from . import larcv_io
 
 # These are all doing sparse IO, so there is no dense IO template here.  But you could add it.
 
-def dataset_io(name, input_file, image_dim, label_mode, prepend_names="", RandomAccess=None):
+def dataset_io(name, input_file, image_dim, prepend_names="", RandomAccess=None):
     if image_dim == 2:
         max_voxels = 20000
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
@@ -14,7 +14,7 @@ def dataset_io(name, input_file, image_dim, label_mode, prepend_names="", Random
         max_voxels = 16000
         data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
 
-    label_proc = gen_label_filler(label_mode, prepend_names)
+    label_proc = gen_label_filler(prepend_names)
 
 
     config = larcv_io.ThreadIOConfig(name=name)
@@ -29,7 +29,7 @@ def dataset_io(name, input_file, image_dim, label_mode, prepend_names="", Random
 
     return config
 
-def ana_io(input_file, image_dim, label_mode, prepend_names=""):
+def ana_io(input_file, image_dim, prepend_names=""):
     if image_dim == 2:
         max_voxels = 20000
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
@@ -38,7 +38,7 @@ def ana_io(input_file, image_dim, label_mode, prepend_names=""):
         data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
 
 
-    label_proc = gen_label_filler(label_mode, prepend_names)
+    label_proc = gen_label_filler(prepend_names)
 
 
     config = larcv_io.ThreadIOConfig(name="AnaIO")
@@ -110,26 +110,16 @@ def gen_sparse3d_data_filler(name, producer, max_voxels):
     return proc
 
 
-def gen_label_filler(label_mode, prepend_names):
+def gen_label_filler(prepend_names):
 
-    if label_mode == 'all':
 
-        proc = larcv_io.ProcessConfig(proc_name=prepend_names + "label", proc_type="BatchFillerPIDLabel")
+    procs = []
+    for name, l in zip(['neut', 'prot', 'cpi', 'npi'], [3, 3, 2, 2]):
+        proc  = larcv_io.ProcessConfig(proc_name=prepend_names + "label_" + name, proc_type="BatchFillerPIDLabel")
 
         proc.set_param("Verbosity",         "3")
-        proc.set_param("ParticleProducer",  "all")
-        proc.set_param("PdgClassList",      "[{}]".format(",".join([str(i) for i in range(36)])))
+        proc.set_param("ParticleProducer",  name+"ID")
+        proc.set_param("PdgClassList",      "[{}]".format(",".join([str(i) for i in range(l)])))
 
-        return [proc]
-
-    else:
-        procs = []
-        for name, l in zip(['neut', 'prot', 'cpi', 'npi'], [3, 3, 2, 2]):
-            proc  = larcv_io.ProcessConfig(proc_name=prepend_names + "label_" + name, proc_type="BatchFillerPIDLabel")
-
-            proc.set_param("Verbosity",         "3")
-            proc.set_param("ParticleProducer",  name+"ID")
-            proc.set_param("PdgClassList",      "[{}]".format(",".join([str(i) for i in range(l)])))
-
-            procs.append(proc)
-        return procs
+        procs.append(proc)
+    return procs
