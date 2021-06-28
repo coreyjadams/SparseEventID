@@ -65,13 +65,13 @@ class trainercore(object):
             return pathlib.Path(directory + filename).exists()
 
 
-       
+
 
         # If mode is train, prepare the train file.
         if self.args.mode.name == "train":
             if not file_exists(self.args.dataset.train_file, self.args.dataset.data_directory):
                 raise Exception(f"Can not open training file {self.args.dataset.train_file} in directory {self.args.dataset.data_directory}")
-     
+
             # Prepare the training sample:
             self._train_data_size = self.larcv_fetcher.prepare_sample(
                 name            = "primary",
@@ -83,8 +83,8 @@ class trainercore(object):
             # If the validation file exists, load that too:
             if not file_exists(self.args.dataset.val_file, self.args.dataset.data_directory):
                 self._val_data_size = None
-                logger.info(f"Can not open validation file {self.args.dataset.train_file} in directory {self.args.dataset.data_directory} - skipping")
-            
+                logger.info(f"Can not open validation file {self.args.dataset.val_file} in directory {self.args.dataset.data_directory} - skipping")
+
             else:
                 self._val_data_size = self.larcv_fetcher.prepare_sample(
                     name            = "val",
@@ -128,106 +128,6 @@ class trainercore(object):
         #             input_file = self.args.file, output_file = str(self.args.aux_file))
 
 
-
-    def build_lr_schedule(self, learning_rate_schedule = None):
-        # Define the learning rate sequence:
-
-        if learning_rate_schedule is None:
-            learning_rate_schedule = {
-                'warm_up' : {
-                    'function'      : 'linear',
-                    'start'         : 0,
-                    'n_epochs'      : 1,
-                    'initial_rate'  : 0.00001,
-                },
-                'flat' : {
-                    'function'      : 'flat',
-                    'start'         : 1,
-                    'n_epochs'      : 20,
-                },
-                'decay' : {
-                    'function'      : 'decay',
-                    'start'         : 21,
-                    'n_epochs'      : 4,
-                        'floor'         : 0.00001,
-                    'decay_rate'    : 0.999
-                },
-            }
-
-        # one_cycle_schedule = {
-        #     'ramp_up' : {
-        #         'function'      : 'linear',
-        #         'start'         : 0,
-        #         'n_epochs'      : 10,
-        #         'initial_rate'  : 0.00001,
-        #         'final_rate'    : 0.001,
-        #     },
-        #     'ramp_down' : {
-        #         'function'      : 'linear',
-        #         'start'         : 10,
-        #         'n_epochs'      : 10,
-        #         'initial_rate'  : 0.001,
-        #         'final_rate'    : 0.00001,
-        #     },
-        #     'decay' : {
-        #         'function'      : 'decay',
-        #         'start'         : 20,
-        #         'n_epochs'      : 5,
-        #         'rate'          : 0.00001
-        #         'floor'         : 0.00001,
-        #         'decay_rate'    : 0.99
-        #     },
-        # }
-        # learning_rate_schedule = one_cycle_schedule
-
-        # We build up the functions we need piecewise:
-        func_list = []
-        cond_list = []
-
-        for i, key in enumerate(learning_rate_schedule):
-
-            # First, create the condition for this stage
-            start    = learning_rate_schedule[key]['start']
-            length   = learning_rate_schedule[key]['n_epochs']
-
-            if i +1 == len(learning_rate_schedule):
-                # Make sure the condition is open ended if this is the last stage
-                condition = lambda x, s=start, l=length: x >= s
-            else:
-                # otherwise bounded
-                condition = lambda x, s=start, l=length: x >= s and x < s + l
-
-
-            if learning_rate_schedule[key]['function'] == 'linear':
-
-                initial_rate = learning_rate_schedule[key]['initial_rate']
-                if 'final_rate' in learning_rate_schedule[key]: final_rate = learning_rate_schedule[key]['final_rate']
-                else: final_rate = self.args.mode.optimizer.learning_rate
-
-                function = lambda x, s=start, l=length, i=initial_rate, f=final_rate : numpy.interp(x, [s, s + l] ,[i, f] )
-
-            elif learning_rate_schedule[key]['function'] == 'flat':
-                if 'rate' in learning_rate_schedule[key]: rate = learning_rate_schedule[key]['rate']
-                else: rate = self.args.mode.optimizer.learning_rate
-
-                function = lambda x : rate
-
-            elif learning_rate_schedule[key]['function'] == 'decay':
-                decay    = learning_rate_schedule[key]['decay_rate']
-                floor    = learning_rate_schedule[key]['floor']
-                if 'rate' in learning_rate_schedule[key]: rate = learning_rate_schedule[key]['rate']
-                else: rate = self.args.mode.optimizer.learning_rate
-
-                function = lambda x, s=start, d=decay, f=floor: (rate-f) * numpy.exp( -(d * (x - s))) + f
-
-            cond_list.append(condition)
-            func_list.append(function)
-
-        self.lr_calculator = lambda x: numpy.piecewise(
-            x * (self.args.run.minibatch_size / self._train_data_size),
-            [c(x * (self.args.run.minibatch_size / self._train_data_size)) for c in cond_list], func_list)
-
-
     def init_network(self):
         pass
 
@@ -249,7 +149,7 @@ class trainercore(object):
             if key in self._log_keys and key != "global_step":
                 log_string += "{}: {:.3}, ".format(key, metrics[key])
 
-        if kind == "Train":
+        if kind == "train":
             log_string += "Img/s: {:.2} ".format(metrics["images_per_second"])
             log_string += "IO: {:.2} ".format(metrics["io_fetch_time"])
         else:
@@ -423,4 +323,3 @@ class trainercore(object):
         self.lr_calculator = lambda x: numpy.piecewise(
             x * (self.args.run.minibatch_size / self._train_data_size),
             [c(x * (self.args.run.minibatch_size / self._train_data_size)) for c in cond_list], func_list)
-

@@ -11,6 +11,7 @@ import datetime
 
 # Import most of the IO functions:
 from src.utils.core.trainercore import trainercore
+from torch.utils.tensorboard import SummaryWriter
 
 import logging
 logger = logging.getLogger()
@@ -36,10 +37,10 @@ class trainer(trainercore):
 
         # This sets up the summary saver:
         if self.args.mode.name == "train":
-            self._savers['train'] = torch.utils.tensorboard.SummaryWriter(self.args.run.output_dir + '/train')
+            self._savers['train'] = SummaryWriter(self.args.run.output_dir + '/train')
 
             if self._val_data_size is not None:
-                self._savers['val'] = torch.utils.tensorboard.SummaryWriter(self.args.run.output_dir + '/val')
+                self._savers['val'] = SummaryWriter(self.args.run.output_dir + '/val')
 
 
 
@@ -75,7 +76,7 @@ class trainer(trainercore):
         else:
             raise Exception(f"Couldn't identify network {self.args.network.name}")
 
-        logger.info(self._net)
+        logger.debug(self._net)
 
 
         if self.args.mode.name == "train":
@@ -106,12 +107,7 @@ class trainer(trainercore):
 
         self.init_saver()
 
-        state = self.restore_model()
-
-        if state is not None:
-            self.load_state(state)
-        else:
-            self._global_step = 0
+        self.restore_model()
 
 
         self._log_keys = ['loss']
@@ -175,7 +171,6 @@ class trainer(trainercore):
 
         loss = None
         for key in logits:
-            print(logits[key].shape)
             values, target = torch.max(inputs[key], dim=1)
             temp_loss = self._criterion(logits[key], target = target)
 
@@ -220,9 +215,9 @@ class trainer(trainercore):
 
     def increment_global_step(self):
 
-        previous_epoch = int((self._global_step * self.args.minibatch_size) / self._train_data_size)
+        previous_epoch = int((self._global_step * self.args.run.minibatch_size) / self._train_data_size)
         self._global_step += 1
-        current_epoch = int((self._global_step * self.args.minibatch_size) / self._train_data_size)
+        current_epoch = int((self._global_step * self.args.run.minibatch_size) / self._train_data_size)
 
         self.on_step_end()
 
@@ -321,7 +316,7 @@ class trainer(trainercore):
         # Add the global step / second to the tensorboard log:
         try:
             metrics['global_step_per_sec'] = 1./self._seconds_per_global_step
-            metrics['images_per_second'] = self.args.minibatch_size / self._seconds_per_global_step
+            metrics['images_per_second'] = self.args.run.minibatch_size / self._seconds_per_global_step
         except:
             metrics['global_step_per_sec'] = 0.0
             metrics['images_per_second'] = 0.0
@@ -342,11 +337,11 @@ class trainer(trainercore):
         metrics['step_time'] = (global_end_time - step_start_time).total_seconds()
 
 
-        self.log(metrics, kind="Train")
+        self.log(metrics, kind="train")
 
         # print("Completed Log")
 
-        self.summary(metrics, kind="Train")
+        self.summary(metrics, kind="train")
 
         # print("Summarized")
 
@@ -365,10 +360,9 @@ class trainer(trainercore):
         metrics should be a dict
         '''
 
-
         if kind in self._savers:
             for metric in metrics.keys():
-                self._savers[kind].add_scaler(metric, metrics[metric], self._global_step)
+                self._savers[kind].add_scalar(metric, metrics[metric], self._global_step)
 
 
     def val_step(self, n_iterations=1):
@@ -387,12 +381,12 @@ class trainer(trainercore):
 
         with torch.no_grad():
 
-            if self._global_step != 0 and self._global_step % self.args.aux_iteration == 0:
+            if self._global_step != 0 and self._global_step % self.args.run.aux_iterations == 0:
 
 
                 # Fetch the next batch of data with larcv
                 # (Make sure to pull from the validation set)
-                minibatch_data = self.larcv_fetcher.fetch_next_batch("aux",force_pop = True)
+                minibatch_data = self.larcv_fetcher.fetch_next_batch("val",force_pop = True)
 
                 # Convert the input data to torch tensors
                 minibatch_data = self.to_torch(minibatch_data)
@@ -426,25 +420,29 @@ class trainer(trainercore):
 
     def checkpoint(self):
 
-        if self.args.checkpoint_iteration == -1:
+        if self.args.mode.checkpoint_iteration == -1:
             return
 
-        if self._global_step % self.args.checkpoint_iteration == 0 and self._global_step != 0:
+        if self._global_step % self.args.mode.checkpoint_iteration == 0 and self._global_step != 0:
             # Save a checkpoint, but don't do it on the first pass
             self.save_model()
 
-
-
     def restore_model(self):
+
+        state = self.load_state_from_file()
+
+        if state is not None:
+            self.restore_state(state)
+
+
+    def load_state_from_file(self):
         ''' This function attempts to restore the model from file
         '''
 
         _, checkpoint_file_path = self.get_model_filepath()
 
-        logger.info(checkpoint_file_path)
 
         if not os.path.isfile(checkpoint_file_path):
-            logger.info("No model to load, starting from scratch!")
             return None
         # Parse the checkpoint file and use that to get the latest file path
 
@@ -453,33 +451,32 @@ class trainer(trainercore):
                 if line.startswith("latest: "):
                     chkp_file = line.replace("latest: ", "").rstrip('\n')
                     chkp_file = os.path.dirname(checkpoint_file_path) + "/" + chkp_file
-                    logger.info("Restoring weights from ", chkp_file)
+                    logger.info(f"Restoring weights from {chkp_file}")
                     break
-
-        if self.args.compute_mode == "CPU":
-            state = torch.load(chkp_file, map_location='cpu')
-        else:
+        try:
             state = torch.load(chkp_file)
+            return state
+        except:
+            logger.info("Could not load from checkpoint file, starting fresh.")
+            return None
 
-        return state
-
-    def load_state(self, state):
-
+    def restore_state(self, state):
 
         self._net.load_state_dict(state['state_dict'])
-        self._opt.load_state_dict(state['optimizer'])
-        self.lr_scheduler.load_state_dict(state['scheduler'])
+        if self.args.mode.name == "train":
+            self._opt.load_state_dict(state['optimizer'])
+            self.lr_scheduler.load_state_dict(state['scheduler'])
+
         self._global_step = state['global_step']
 
         # If using GPUs, move the model to GPU:
-        if self.args.compute_mode == "GPU":
+        if self.args.run.compute_mode == "GPU" and self.args.mode.name == "train":
             for state in self._opt.state.values():
                 for k, v in state.items():
                     if torch.is_tensor(v):
                         state[k] = v.cuda()
 
         return True
-
 
     def save_model(self):
         '''Save the model to file
@@ -505,7 +502,7 @@ class trainer(trainercore):
         # Parse the checkpoint file to see what the last checkpoints were:
 
         # Keep only the last 5 checkpoints
-        n_keep = 100
+        n_keep = 5
 
 
         past_checkpoint_files = {}
@@ -540,8 +537,8 @@ class trainer(trainercore):
     def get_model_filepath(self):
         '''Helper function to build the filepath of a model for saving and restoring:
 
-        '''
 
+        '''
 
         # Find the base path of the log directory
         file_path= self.args.run.output_dir  + "/checkpoints/"
@@ -553,13 +550,14 @@ class trainer(trainercore):
         return name, checkpoint_file_path
 
 
+
     def batch_process(self):
 
         # If we're not training, force the number of iterations to the epoch size or less
         if self.args.mode.name != "train":
             if self.args.run.iterations > int(self._train_data_size/self.args.minibatch_size) + 1:
                 self.args.run.iterations = int(self._train_data_size/self.args.minibatch_size) + 1
-                logger.info('Number of iterations set to', self.args.run.iterations)
+                logger.info(f'Number of iterations set to {self.args.run.iterations}')
 
         start = time.time()
         # Run iterations
@@ -576,8 +574,12 @@ class trainer(trainercore):
             else:
                 self.ana_step(i)
 
-        logger.info("Total time to batch process: ", time.time() - start)
+        if self.args.mode.name == "train":
+            self.save_model()
+
+        logger.info(f"Total time to batch process: { time.time() - start}")
 
         # Close savers:
-        for saver in self._savers: saver.close()
-
+        for saver in self._savers.keys():
+            self._savers[saver].flush()
+            self._savers[saver].close()

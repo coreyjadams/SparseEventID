@@ -86,7 +86,7 @@ class larcv_fetcher(object):
             else:
                 data_keys[proc._name] = proc._name
 
-        # Assign the keywords here:    
+        # Assign the keywords here:
         self.keyword_label = []
         for key in data_keys.keys():
             if key != 'image':
@@ -133,18 +133,22 @@ class larcv_fetcher(object):
         if not force_pop:
             pop = False
 
+        while self._larcv_interface.is_reading(name):
+            time.sleep(0.1)
 
         minibatch_data = self._larcv_interface.fetch_minibatch_data(name,
             pop=pop,fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(name)
 
+        # This brings up the next data to current data
+        if pop:
+            self._larcv_interface.prepare_next(name)
+
         # If the returned data is None, return none and don't load more:
         if minibatch_data is None:
             return minibatch_data
 
-        # This brings up the next data to current data
-        if pop:
-            self._larcv_interface.prepare_next(name)
+
 
         # Reshape as needed from larcv:
         for key in minibatch_data:

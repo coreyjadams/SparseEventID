@@ -7,7 +7,7 @@ class MLP(torch.nn.Module):
         torch.nn.Module.__init__(self)
 
         self.mlp = torch.nn.Conv1d(
-            in_channels  = input_size, 
+            in_channels  = input_size,
             out_channels = output_size,
             kernel_size  = (1))
 
@@ -23,9 +23,15 @@ class TNet(torch.nn.Module):
         torch.nn.Module.__init__(self)
 
         # Initialize these to small but not zero
-        self.trainable_weights = (0.01/256.)*torch.nn.Parameter(torch.rand([256,output_shape**2]), requires_grad=True)
+        self.trainable_weights = torch.nn.Parameter(
+            (0.01/256)*torch.rand([256,output_shape**2]),
+            requires_grad=True
+        )
 
-        self.trainable_biases  = torch.nn.Parameter(torch.eye(output_shape), requires_grad=True)
+        self.trainable_biases  = torch.nn.Parameter(
+            torch.eye(output_shape),
+            requires_grad=True
+        )
 
         self.identity = torch.eye(output_shape)
 
@@ -42,7 +48,12 @@ class TNet(torch.nn.Module):
             torch.nn.Linear(512, 256), torch.nn.ReLU()
             )
 
+    def cuda(self, device=None):
+        torch.nn.Module.cuda(self, device)
+        self.identity = self.identity.cuda()
+
     def forward(self, data):
+
 
         x = self.mlps(data)
 
@@ -69,23 +80,28 @@ class PointNet(torch.nn.Module):
 
         self.tnet0_list = torch.nn.ModuleList([TNet(3, 3) for i in range(3)])
 
-        self.mlp0_list = [ torch.nn.Sequential(MLP(3, 64), MLP(64, 64))  for i in range(3) ]
+        self.mlp0_list = torch.nn.ModuleList([ torch.nn.Sequential(MLP(3, 64), MLP(64, 64))  for i in range(3) ])
 
         self.tnet1_list = torch.nn.ModuleList([TNet(64, 64) for i in range(3)])
 
-        self.mlp1_list = [ torch.nn.Sequential(MLP(64, 128), MLP(128, 1024))  for i in range(3) ]
+        self.mlp1_list = torch.nn.ModuleList([ torch.nn.Sequential(MLP(64, 128), MLP(128, 1024))  for i in range(3) ])
 
-        print(output_shape)
 
-        self.final_mlp = { 
-                key : torch.nn.Sequential(
-                    MLP(3*1024, 512),
-                    MLP(512, 256),
-                    MLP(256, output_shape[key][-1])
-                    )
-                for key in output_shape.keys()
-            }
+        self.final_mlp = torch.nn.ModuleDict(
+                { key : torch.nn.Sequential(
+                        MLP(3*1024, 512),
+                        MLP(512, 256),
+                        MLP(256, output_shape[key][-1])
+                        )
+                    for key in output_shape.keys()
+                }
+            )
 
+
+    def cuda(self, device=None):
+        torch.nn.Module.cuda(self, device)
+        [ t.cuda() for t in self.tnet0_list ]
+        [ t.cuda() for t in self.tnet1_list ]
 
     def forward(self, data):
         #print("entered")
@@ -95,7 +111,7 @@ class PointNet(torch.nn.Module):
         # in 3D, shape is [batch_size, max_points, x/y/z/val]
 
 
-        tnets = [ self.tnet0_list[i](d) for i, d in enumerate(data)] 
+        tnets = [ self.tnet0_list[i](d) for i, d in enumerate(data)]
 
         rotations, losses1 = list(zip(*tnets))
 
@@ -106,7 +122,7 @@ class PointNet(torch.nn.Module):
 
 
         # Now apply the MLP to 64 features:
-        data = [ self.mlp0_list[i](d) for i, d in enumerate(data)] 
+        data = [ self.mlp0_list[i](d) for i, d in enumerate(data)]
 
         # Now, another TNet call:
 
@@ -120,11 +136,12 @@ class PointNet(torch.nn.Module):
 
 
         # The next MLPs:
-        data = [ self.mlp1_list[i](d) for i, d in enumerate(data)] 
+        data = [ self.mlp1_list[i](d) for i, d in enumerate(data)]
 
         # Next, we maxpool over each plane:
         shape = data[0].shape[2:]
         data = [ torch.squeeze(torch.nn.functional.max_pool1d(d, kernel_size=shape)) for d in data ]
+
 
         # For the outputs, we concatenate across all 3 planes and have a unique series of MLPs for each
         # Category of output
