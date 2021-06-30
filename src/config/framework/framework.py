@@ -14,15 +14,13 @@ class Framework:
 
 @dataclass
 class Tensorflow(Framework):
-    name: str = "tensorflow"
-    checkpoint_iteration: int =  500
+    name:                         str = "tensorflow"
     inter_op_parallelism_threads: int = 2
     intra_op_parallelism_threads: int = 24
 
 @dataclass
 class Torch(Framework):
-    name: str = "torch"
-    sparse: bool = False
+    name:             str             = "torch"
     distributed_mode: DistributedMode = DistributedMode.DDP
 
 cs = ConfigStore.instance()

@@ -11,7 +11,7 @@ def dataset_io(name, input_file, image_dim, prepend_names="", RandomAccess=None)
         max_voxels = 20000
         data_proc = gen_sparse2d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
     else:
-        max_voxels = 16000
+        max_voxels = 30000
         data_proc = gen_sparse3d_data_filler(name=prepend_names + "data", producer="\"dunevoxels\"", max_voxels=max_voxels)
 
     label_proc = gen_label_filler(prepend_names)

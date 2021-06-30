@@ -1,3 +1,2 @@
 name: torch
-sparse: False
 distributed_mode: DDP

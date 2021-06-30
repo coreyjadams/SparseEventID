@@ -20,13 +20,6 @@ class Precision(Enum):
     bfloat16 = 2
     float16  = 3
 
-# @dataclass 
-# class CosmicTagger:
-#     network:            Network     = Network()
-#     mode:               Mode        = MISSING
-#     framework:          Framework   = MISSING
-#     data:               Data        = MISSING
-
 @dataclass
 class Run:
     distributed:        bool        = True
@@ -34,7 +27,7 @@ class Run:
     iterations:         int         = MISSING
     aux_iterations:     int         = MISSING
     minibatch_size:     int         = MISSING
-    aux_minibatch_size: int         = MISSING    
+    aux_minibatch_size: int         = MISSING
     id:                 int         = MISSING
     precision:          Precision   = Precision.float32
     profile:            bool        = False
@@ -54,10 +47,12 @@ class Config:
             {"hydra/job_logging": "disable_hydra_logging"},
         ]
     )
-
-
-cs.store(name="config", node=Config)
+    network:    network.Network     = MISSING
+    framework:  framework.Framework = MISSING
+    dataset:    dataset.Dataset     = MISSING
 
 cs = ConfigStore.instance()
+cs.store(name="config", node=Config)
+
 # cs.store(name="config", node=CosmicTagger)
 # cs.store(name="run", node=Run)

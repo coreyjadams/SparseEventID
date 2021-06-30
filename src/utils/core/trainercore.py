@@ -32,10 +32,6 @@ class trainercore(object):
         self._iteration    = 0
         self._global_step  = 0
         self.args          = args
-        if args.framework.name == "torch":
-            sparse = args.framework.sparse
-        else:
-            sparse = False
 
         dataset = self.args.dataset
 

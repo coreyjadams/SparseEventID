@@ -56,7 +56,7 @@ class trainer(trainercore):
         # To initialize the network, we see what the name is
         # and act on that:
         if self.args.network.name == "resnet":
-            if self.args.framework.sparse == True:
+            if self.args.network.data_format == 'sparse':
                 if self.args.dataset.dimension == 2:
                     from src.networks.torch import sparseresnet
                     self._net = sparseresnet.ResNet(output_shape, self.args)
@@ -253,8 +253,8 @@ class trainer(trainercore):
         for key in minibatch_data:
             if key == 'entries' or key =='event_ids':
                 continue
-            if key == 'image' and self.args.framework.sparse:
-                if self.args.input_dimension == 3:
+            if key == 'image' and self.args.network.data_format == 'sparse':
+                if self.args.dataset.dimension == 3:
                     minibatch_data['image'] = (
                             torch.tensor(minibatch_data['image'][0]).long(),
                             torch.tensor(minibatch_data['image'][1], device=device),

@@ -78,13 +78,14 @@ class PointNet(torch.nn.Module):
     def __init__(self, output_shape, args):
         torch.nn.Module.__init__(self)
 
-        self.tnet0_list = torch.nn.ModuleList([TNet(3, 3) for i in range(3)])
+        # TNets and MLPs are _shared_ across planes - they should be learning the same features
+        self.tnet0 = TNet(3, 3)
 
-        self.mlp0_list = torch.nn.ModuleList([ torch.nn.Sequential(MLP(3, 64), MLP(64, 64))  for i in range(3) ])
+        self.mlp0 =  torch.nn.Sequential(MLP(3, 64), MLP(64, 64))
 
-        self.tnet1_list = torch.nn.ModuleList([TNet(64, 64) for i in range(3)])
+        self.tnet1 = TNet(64, 64)
 
-        self.mlp1_list = torch.nn.ModuleList([ torch.nn.Sequential(MLP(64, 128), MLP(128, 1024))  for i in range(3) ])
+        self.mlp1 =  torch.nn.Sequential(MLP(64, 128), MLP(128, 1024))
 
 
         self.final_mlp = torch.nn.ModuleDict(
@@ -100,8 +101,8 @@ class PointNet(torch.nn.Module):
 
     def cuda(self, device=None):
         torch.nn.Module.cuda(self, device)
-        [ t.cuda() for t in self.tnet0_list ]
-        [ t.cuda() for t in self.tnet1_list ]
+        self.tnet0.cuda()
+        self.tnet1.cuda()
 
     def forward(self, data):
         #print("entered")
@@ -111,7 +112,7 @@ class PointNet(torch.nn.Module):
         # in 3D, shape is [batch_size, max_points, x/y/z/val]
 
 
-        tnets = [ self.tnet0_list[i](d) for i, d in enumerate(data)]
+        tnets = [ self.tnet0(d) for d in data]
 
         rotations, losses1 = list(zip(*tnets))
 
@@ -122,11 +123,11 @@ class PointNet(torch.nn.Module):
 
 
         # Now apply the MLP to 64 features:
-        data = [ self.mlp0_list[i](d) for i, d in enumerate(data)]
+        data = [ self.mlp0(d) for d in data]
 
         # Now, another TNet call:
 
-        tnets = [self.tnet1_list[i](d) for i, d in enumerate(data)]
+        tnets = [self.tnet1(d) for d in data]
 
         rotations, losses2 = list(zip(*tnets))
         # Apply the new rotations:
@@ -136,7 +137,7 @@ class PointNet(torch.nn.Module):
 
 
         # The next MLPs:
-        data = [ self.mlp1_list[i](d) for i, d in enumerate(data)]
+        data = [ self.mlp1(d) for d in data]
 
         # Next, we maxpool over each plane:
         shape = data[0].shape[2:]
