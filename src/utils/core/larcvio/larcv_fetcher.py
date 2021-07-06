@@ -75,7 +75,7 @@ class larcv_fetcher(object):
             'filler_name' : config._name,
             'filler_cfg'  : main_file.name,
             'verbosity'   : 5,
-            'make_copy'   : True
+            'make_copy'   : False
         }
 
         # Build up the data_keys:
@@ -135,6 +135,7 @@ class larcv_fetcher(object):
             pop = False
 
         while self._larcv_interface.is_reading(name):
+            print("SLeeping in larcv_fetcher")
             time.sleep(0.1)
 
         minibatch_data = self._larcv_interface.fetch_minibatch_data(name,
@@ -143,7 +144,9 @@ class larcv_fetcher(object):
 
         # This brings up the next data to current data
         if pop:
+            print(f"Preparing next {name}")
             self._larcv_interface.prepare_next(name)
+
 
         # If the returned data is None, return none and don't load more:
         if minibatch_data is None:
@@ -156,15 +159,6 @@ class larcv_fetcher(object):
             if key == 'entries' or key == 'event_ids':
                 continue
             minibatch_data[key] = numpy.reshape(minibatch_data[key], minibatch_dims[key])
-
-        # Strip off the primary/aux label in the keys:
-        # if self.mode != 'train':
-        #     # Can't do this in a loop due to limitations of python's dictionaries.
-        #     minibatch_data["label_cpi"]  = minibatch_data.pop("aux_label_cpi")
-        #     minibatch_data["label_npi"]  = minibatch_data.pop("aux_label_npi")
-        #     minibatch_data["label_prot"] = minibatch_data.pop("aux_label_prot")
-        #     minibatch_data["label_neut"] = minibatch_data.pop("aux_label_neut")
-
 
         # Here, do some massaging to convert the input data to another format, if necessary:
         if self.image_mode == 'dense':

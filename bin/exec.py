@@ -105,8 +105,11 @@ class SparseEventID(object):
         logger.info(self.__str__())
 
         self.make_trainer()
+        print("Initializing")
 
-        self.trainer.initialize(io_only=True)
+        configured_keys = self.trainer.initialize(io_only=True)
+
+        print("Initialized")
 
         if self.args.run.distributed:
             from mpi4py import MPI
@@ -116,11 +119,15 @@ class SparseEventID(object):
 
         # label_stats = numpy.zeros((36,))
         global_start = time.time()
-        time.sleep(0.1)
+        time.sleep(0.5)
+        print("\n\n\n\nBegin Loop \n\n\n\n")
         for i in range(self.args.run.iterations):
             start = time.time()
-            mb = self.trainer.larcv_fetcher.fetch_next_batch("train", force_pop=True)
-
+            for key in configured_keys:
+                time.sleep(0.0)
+                print(f"Fetching {key}")
+                mb = self.trainer.larcv_fetcher.fetch_next_batch(key, force_pop=True)
+                print(f"Successfully got {key}")
             end = time.time()
 
             logger.info(f"{i}: Time to fetch a minibatch of data: {end - start:.2f}s")
@@ -133,9 +140,9 @@ class SparseEventID(object):
     def make_trainer(self):
 
         if self.args.mode.name == "iotest":
-            from src.utils.core import iocore
+            from src.utils.core import trainercore
 
-            self.trainer = iocore.iocore(self.args)
+            self.trainer = trainercore.trainercore(self.args)
             return
 
         if self.args.framework.name == "tensorflow":
@@ -149,7 +156,7 @@ class SparseEventID(object):
             else:
                 from src.utils.tensorflow import trainer
                 self.trainer = trainer.trainer(self.args)
-           
+
 
         elif self.args.framework.name == "torch":
             if self.args.run.distributed:
@@ -222,4 +229,3 @@ if __name__ == '__main__':
     if "--help" not in sys.argv and "--hydra-help" not in sys.argv:
         sys.argv += ['hydra.run.dir=.', 'hydra/job_logging=disabled']
     main()
-

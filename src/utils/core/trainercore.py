@@ -46,7 +46,7 @@ class trainercore(object):
 
 
     def initialize(self, io_only=True):
-        self._initialize_io(color=0)
+        return self._initialize_io(color=0)
 
     def _initialize_io(self, color=None):
 
@@ -61,10 +61,11 @@ class trainercore(object):
             return pathlib.Path(directory + filename).exists()
 
 
+        configured_keys = []
 
 
         # If mode is train, prepare the train file.
-        if self.args.mode.name == "train":
+        if self.args.mode.name == "train" or self.args.mode.name == "iotest":
             if not file_exists(self.args.dataset.train_file, self.args.dataset.data_directory):
                 raise Exception(f"Can not open training file {self.args.dataset.train_file} in directory {self.args.dataset.data_directory}")
 
@@ -76,6 +77,8 @@ class trainercore(object):
                 color           = color
             )
 
+            configured_keys += ["primary",]
+
             # If the validation file exists, load that too:
             if not file_exists(self.args.dataset.val_file, self.args.dataset.data_directory):
                 self._val_data_size = None
@@ -85,13 +88,15 @@ class trainercore(object):
                 self._val_data_size = self.larcv_fetcher.prepare_sample(
                     name            = "val",
                     input_file      = self.args.dataset.data_directory + self.args.dataset.val_file,
-                    batch_size      = self.args.run.minibatch_size,
+                    batch_size      = self.args.run.aux_minibatch_size,
                     color           = color
                 )
+                configured_keys += ["val",]
 
         elif self.args.mode.name == "inference":
             pass
 
+        return configured_keys
 
     def init_network(self):
         pass

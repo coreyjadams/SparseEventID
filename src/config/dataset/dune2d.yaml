@@ -1,8 +1,8 @@
 label:          Classification
 data_directory: /grand/projects/datascience/cadams/datasets/DUNE/pixsim_small/
 train_file:     train.h5
-test_file:      none.h5
-val_file:       none.h5
+test_file:      none
+val_file:       train.h5
 imgaes:         3
-access_mode:    random_blocks
+access_mode:    serial_access
 dimension:      2
