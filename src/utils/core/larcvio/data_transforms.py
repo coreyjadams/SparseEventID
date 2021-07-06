@@ -1,5 +1,4 @@
 import numpy
-import torch
 
 '''
 This is a torch-free file that exists to massage data
@@ -195,10 +194,6 @@ def larcvsparse_to_dense_3d(input_array, dense_shape):
 
 def larcvsparse_to_pointcloud_2d(input_array):
 
-    # This function iterates over each batch to create a pointcloud from each batch sample
-    # Each point cloud will generate a torch-geometric Data object using the Data() class
-    # The point clouds are appended to a data list which can be input to a Batch.from_data_list object
-
     # At the end, we have a list of arrays of shape
     # [batch_size, val, npoints]
     # This is treating x/y/val as features and npoints as the "image"
@@ -231,10 +226,6 @@ def larcvsparse_to_pointcloud_2d(input_array):
     return output
 
 def larcvsparse_to_pointcloud_3d(input_array):
-
-    # This function iterates over each batch to create a pointcloud from each batch sample
-    # Each point cloud will generate a torch-geometric Data object using the Data() class
-    # The point clouds are appended to a data list which can be input to a Batch.from_data_list object
 
     # At the end, we have a list of arrays of shape
     # [batch_size, val, npoints]

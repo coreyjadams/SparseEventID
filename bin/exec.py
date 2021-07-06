@@ -105,11 +105,11 @@ class SparseEventID(object):
         logger.info(self.__str__())
 
         self.make_trainer()
-        print("Initializing")
+        # print("Initializing")
 
         configured_keys = self.trainer.initialize(io_only=True)
 
-        print("Initialized")
+        # print("Initialized")
 
         if self.args.run.distributed:
             from mpi4py import MPI
@@ -120,14 +120,14 @@ class SparseEventID(object):
         # label_stats = numpy.zeros((36,))
         global_start = time.time()
         time.sleep(0.5)
-        print("\n\n\n\nBegin Loop \n\n\n\n")
+        # print("\n\n\n\nBegin Loop \n\n\n\n")
         for i in range(self.args.run.iterations):
             start = time.time()
             for key in configured_keys:
                 time.sleep(0.0)
-                print(f"Fetching {key}")
+                # print(f"Fetching {key}")
                 mb = self.trainer.larcv_fetcher.fetch_next_batch(key, force_pop=True)
-                print(f"Successfully got {key}")
+                # print(f"Successfully got {key}")
             end = time.time()
 
             logger.info(f"{i}: Time to fetch a minibatch of data: {end - start:.2f}s")

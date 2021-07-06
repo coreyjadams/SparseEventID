@@ -47,8 +47,6 @@ class trainer(trainercore):
     def init_network(self):
 
 
-        dims = self.larcv_fetcher.fetch_minibatch_dims('primary')
-
         # This sets up the necessary output shape:
         output_shape = self.larcv_fetcher.output_shape('primary')
 

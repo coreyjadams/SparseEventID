@@ -135,7 +135,7 @@ class larcv_fetcher(object):
             pop = False
 
         while self._larcv_interface.is_reading(name):
-            print("SLeeping in larcv_fetcher")
+            # print("Sleeping in larcv_fetcher")
             time.sleep(0.1)
 
         minibatch_data = self._larcv_interface.fetch_minibatch_data(name,
@@ -144,8 +144,9 @@ class larcv_fetcher(object):
 
         # This brings up the next data to current data
         if pop:
-            print(f"Preparing next {name}")
+            # print(f"Preparing next {name}")
             self._larcv_interface.prepare_next(name)
+            time.sleep(0.1)
 
 
         # If the returned data is None, return none and don't load more:
