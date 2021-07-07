@@ -12,11 +12,17 @@ class DistributedMode(Enum):
 class Framework:
     name: str = MISSING
 
+class DataFormat(Enum):
+    channels_first = 0
+    channels_last = 1
+
+
 @dataclass
 class Tensorflow(Framework):
     name:                         str = "tensorflow"
     inter_op_parallelism_threads: int = 2
     intra_op_parallelism_threads: int = 24
+    data_format:                  DataFormat = DataFormat.channels_first
 
 @dataclass
 class Torch(Framework):

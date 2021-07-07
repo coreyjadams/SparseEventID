@@ -94,15 +94,6 @@ class trainer(trainercore):
 
         self._net.trainable = True
 
-        # self._logits = self._net(self._input['image'], training=self.args.mode.name == "train")
-
-        # # If channels first, need to permute the logits:
-        # if self._channels_dim == 1:
-        #     permutation = tf.keras.layers.Permute((2, 3, 1))
-        #     self._loss_logits = [ permutation(l) for l in self._logits ]
-        # else:
-        #     self._loss_logits = self._logits
-
 
         # TO PROPERLY INITIALIZE THE NETWORK, NEED TO DO A FORWARD PASS
         minibatch_data = self.larcv_fetcher.fetch_next_batch("primary",force_pop=False)
@@ -110,12 +101,6 @@ class trainer(trainercore):
 
         self.forward_pass(minibatch_data['image'], training=False)
 
-
-        self.acc_calculator  = AccuracyCalculator.AccuracyCalculator()
-        self.loss_calculator = LossCalculator.LossCalculator(
-            self.args.mode.optimizer.loss_balance_scheme, self._channels_dim)
-
-        self._log_keys = ["loss", "Average/Non_Bkg_Accuracy", "Average/mIoU"]
 
         end = time.time()
         return end - start
@@ -202,6 +187,11 @@ class trainer(trainercore):
 
         # Try to restore a model?
         restored = self.restore_model()
+
+
+        self._log_keys = ['loss']
+        for key in self.larcv_fetcher.keyword_label:
+            self._log_keys.append('acc/{}'.format(key))
 
 
     def init_learning_rate(self):
@@ -311,28 +301,43 @@ class trainer(trainercore):
 
         self.tape = tf.GradientTape()
 
-    def _compute_metrics(self, logits, prediction, labels, loss):
+    @tf.function
+    def _compute_metrics(self, logits, prediction, minibatch_data, loss):
+
 
         # self._output['softmax'] = [ tf.nn.softmax(x) for x in self._logits]
         # self._output['prediction'] = [ tf.argmax(input=x, axis=self._channels_dim) for x in self._logits]
-        accuracy = self.acc_calculator(prediction=prediction, labels=labels)
 
         metrics = {}
-        for p in [0,1,2]:
-            metrics[f"plane{p}/Total_Accuracy"]          = accuracy["total_accuracy"][p]
-            metrics[f"plane{p}/Non_Bkg_Accuracy"]        = accuracy["non_bkg_accuracy"][p]
-            metrics[f"plane{p}/Neutrino_IoU"]            = accuracy["neut_iou"][p]
-            metrics[f"plane{p}/Cosmic_IoU"]              = accuracy["cosmic_iou"][p]
 
-        metrics["Average/Total_Accuracy"]          = float(tf.reduce_mean(accuracy["total_accuracy"]).numpy())
-        metrics["Average/Non_Bkg_Accuracy"]        = float(tf.reduce_mean(accuracy["non_bkg_accuracy"]).numpy())
-        metrics["Average/Neutrino_IoU"]            = float(tf.reduce_mean(accuracy["neut_iou"]).numpy())
-        metrics["Average/Cosmic_IoU"]              = float(tf.reduce_mean(accuracy["cosmic_iou"]).numpy())
-        metrics["Average/mIoU"]                    = float(tf.reduce_mean(accuracy["miou"]).numpy())
+        accuracy = self._calculate_accuracy(prediction=prediction, minibatch_data=minibatch_data)
+        for key in accuracy:
+            metrics['acc/{}'.format(key)] = accuracy[key]
 
         metrics['loss'] = loss
 
         return metrics
+
+    @tf.function
+    def _calculate_accuracy(self, prediction, minibatch_data):
+        ''' Calculate the accuracy.
+
+        '''
+
+        # Compare how often the input label and the output prediction agree:
+
+
+        accuracy = {}
+        for key in prediction:
+            indices = tf.math.argmax(minibatch_data[key], axis=1, output_type=prediction[key].dtype)
+            # predict = tf.math.argmax(logits[key], dim=1)
+            correct_prediction = tf.math.equal(prediction[key],indices)
+
+            accuracy[key] = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+
+        return accuracy
+
 
     def log(self, metrics, kind, step):
 
@@ -370,6 +375,8 @@ class trainer(trainercore):
             if key == 'image' and self.args.network.data_format == 'graph':
                 if self.args.dataset.dimension == 2:
                     minibatch_data[key] = [ tf.convert_to_tensor(m, dtype=input_dtype) for m in minibatch_data[key]]
+                    if self.args.framework.data_format == "channels_last":
+                        minibatch_data[key] = [ tf.transpose(m, perm=(0,2,1)) for m in minibatch_data[key]]
                 else:
                     # This is repetitive from below, but might need to be adjusted eventually.
                     minibatch_data[key] = tf.convert_to_tensor(minibatch_data[key], dtype=input_dtype)
@@ -385,31 +392,22 @@ class trainer(trainercore):
         # Run a forward pass of the model on the input image:
         logits = self._net(image, training=training)
 
-        prediction = [tf.argmax(l, axis=self._channels_dim, output_type = tf.dtypes.int32) for l in logits]
+
+        prediction = { key: tf.math.argmax(logits[key], axis=-1, output_type = tf.dtypes.int32) for key in logits.keys()}
 
         return logits, prediction
 
     @tf.function
-    def _calculate_loss(self, inputs, logits):
+    def _calculate_loss(self, minibatch_data, logits):
         ''' Calculate the loss.
 
         returns a single scalar for the optimizer to use.
         '''
 
-        self.num_classes = {
-            'label_cpi' : 2,
-            'label_prot' : 3,
-            'label_npi' : 2,
-            'label_neut' : 3,
-        }
-
-
-
         loss = None
         for key in logits:
-            values, target = tf.argmax(inputs[key], dim=1)
-            temp_loss = self._criterion(logits[key], target = target)
-
+            temp_loss = tf.nn.softmax_cross_entropy_with_logits(labels=minibatch_data[key], logits=logits[key])
+            temp_loss = tf.reduce_mean(temp_loss)
             if loss is None:
                 loss = temp_loss
             else:
@@ -427,7 +425,7 @@ class trainer(trainercore):
                 saver = self._main_writer
 
             with saver.as_default():
-                for metric in metrics:
+                for metric in metrics.keys():
                     name = metric
                     tf.summary.scalar(metric, metrics[metric], self.current_step())
         return
@@ -466,9 +464,9 @@ class trainer(trainercore):
 
             # Fetch the next batch of data with larcv
             minibatch_data = self.larcv_fetcher.fetch_next_batch('aux', force_pop = True)
-            image, label = self.cast_input(minibatch_data['image'], minibatch_data['label'])
+            minibatch_data = self.cast_input(minibatch_data)
 
-            labels, logits, prediction = self.forward_pass(image, label, training=False)
+            labels, logits, prediction = self.forward_pass(minibatch_data['image'], training=False)
 
             loss = self.loss_calculator(labels, logits)
 
@@ -481,23 +479,22 @@ class trainer(trainercore):
 
 
             self.summary(metrics=metrics, saver=self._val_writer)
-            self.summary_images(labels, prediction, saver=self._val_writer)
 
         return
 
 
     @tf.function
-    def gradient_step(self, image, label):
+    def gradient_step(self, minibatch_data):
 
         with self.tape:
-            labels, logits, prediction = self.forward_pass(image, label, training=True)
+            logits, prediction = self.forward_pass(minibatch_data["image"], training=True)
 
             # The loss function has to be in full precision or automatic mixed.
             # bfloat16 is not supported
             if self.args.run.precision == "bfloat16":
                 logits = [ tf.cast(l, dtype=tf.float32) for  l in logits ]
 
-            loss = self.loss_calculator(labels, logits)
+            loss = self._calculate_loss(minibatch_data, logits)
         #
             if self.args.run.precision == "mixed":
                 scaled_loss = self._opt.get_scaled_loss(loss)
@@ -509,7 +506,7 @@ class trainer(trainercore):
         else:
             gradients = self.get_gradients(loss, self.tape, self._net.trainable_weights)
 
-        return logits, labels, prediction, loss, gradients
+        return logits, prediction, loss, gradients
 
     def train_step(self):
 
@@ -526,7 +523,7 @@ class trainer(trainercore):
             # Fetch the next batch of data with larcv
             io_start_time = datetime.datetime.now()
             minibatch_data = self.larcv_fetcher.fetch_next_batch("primary",force_pop=True)
-            image, label = self.cast_input(minibatch_data['image'], minibatch_data['label'])
+            minibatch_data = self.cast_input(minibatch_data)
 
             io_end_time = datetime.datetime.now()
             io_fetch_time += (io_end_time - io_start_time).total_seconds()
@@ -534,7 +531,7 @@ class trainer(trainercore):
             if self.args.run.profile:
                 if not self.args.distributed or self._rank == 0:
                     tf.profiler.experimental.start(self.args.run.output_dir + "/train/")
-            logits, labels, prediction, loss, internal_gradients = self.gradient_step(image, label)
+            logits, prediction, loss, internal_gradients = self.gradient_step(minibatch_data)
 
             if self.args.run.profile:
                 if not self.args.distributed or self._rank == 0:
@@ -548,7 +545,7 @@ class trainer(trainercore):
 
 
             # Compute any necessary metrics:
-            interior_metrics = self._compute_metrics(logits, prediction, labels, loss)
+            interior_metrics = self._compute_metrics(logits, prediction, minibatch_data, loss)
 
             for key in interior_metrics:
                 if key in metrics:
@@ -589,7 +586,6 @@ class trainer(trainercore):
 
 
         self.summary(metrics)
-        self.summary_images(labels, prediction)
 
         # Report metrics on the terminal:
         self.log(metrics, kind="Train", step=int(self.current_step().numpy()))

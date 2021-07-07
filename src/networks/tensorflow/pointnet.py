@@ -23,9 +23,7 @@ class TNet(tf.keras.layers.Layer):
     def __init__(self, input_shape, output_shape, data_format):
         tf.keras.layers.Layer.__init__(self)
 
-        #pooling layer:
-        self.pool = tf.keras.layers.MaxPool1D()
-
+        self.data_format = data_format
 
         # Initialize these to small but not zero
         self.trainable_matrix = tf.Variable(
@@ -56,25 +54,30 @@ class TNet(tf.keras.layers.Layer):
 
     def call(self, data):
 
-        print(data.shape)
 
         x = self.mlps(data)
-        print(x.shape)
         shape = x.shape[2:]
-        print(shape)
-        x = torch.nn.functional.max_pool1d(x, kernel_size=shape)
-        x = torch.squeeze(x)
+
+        # How many points are we pooling?
+        if self.data_format == "channels_last":
+            pool_size = data.shape[1]
+        elif self.data_format == "channels_first":
+            pool_size = data.shape[2]
+        
+        #pooling layer:
+        x = tf.keras.layers.MaxPool1D(pool_size=pool_size, data_format=self.data_format)(x)
+
+        x = tf.squeeze(x)
 
         x = self.fully_connected(x)
 
-        matrix = torch.matmul(x, self.trainable_matrix)
-        matrix = torch.reshape(matrix, (-1, self.output_dimension, self.output_dimension))
+        matrix = tf.linalg.matmul(x, self.trainable_matrix)
+        matrix = tf.reshape(matrix, (-1, self.output_dimension, self.output_dimension))
         matrix = matrix + self.trainable_biases
 
+        transpose = tf.transpose(matrix, perm=(0, 2,1))
 
-        transpose = torch.transpose(matrix, 1,2)
-
-        ortho_loss = torch.sum( (self.identity - torch.matmul(matrix, transpose) )**2 )
+        ortho_loss = tf.reduce_sum( (self.identity - tf.linalg.matmul(matrix, transpose) )**2 )
 
         return matrix, ortho_loss
 
@@ -82,34 +85,46 @@ class PointNet(tf.keras.layers.Layer):
     def __init__(self, output_shape, args):
         tf.keras.layers.Layer.__init__(self)
 
+        # What's the dataformat for tensorflow?
+        self.data_format = args.framework.data_format
+
         # TNets and MLPs are _shared_ across planes - they should be learning the same features
-        self.tnet0 = TNet(3, 3)
+        self.tnet0 = TNet(3, 3, data_format = self.data_format)
 
-        self.mlp0 =  tf.keras.Sequential([MLP(3, 64), MLP(64, 64)])
+        self.mlp0 =  tf.keras.Sequential(
+                [
+                    MLP(3, 64, data_format = self.data_format), 
+                    MLP(64, 64, data_format = self.data_format)
+                ]
+            )
 
-        self.tnet1 = TNet(64, 64)
+        self.tnet1 = TNet(64, 64, data_format = self.data_format)
 
-        self.mlp1 =  tf.keras.Sequential([MLP(64, 128), MLP(128, 1024)])
+        self.mlp1 =  tf.keras.Sequential(
+                [
+                    MLP(64, 128, data_format = self.data_format), 
+                    MLP(128, 1024, data_format = self.data_format)
+                ]
+            )
 
 
         self.final_mlp = {
                     key : tf.keras.Sequential([
-                        MLP(3*1024, 512),
-                        MLP(512, 256),
-                        MLP(256, output_shape[key][-1])
+                        MLP(3*1024, 512, data_format = self.data_format),
+                        MLP(512, 256, data_format = self.data_format),
+                        MLP(256, output_shape[key][-1], data_format = self.data_format)
                         ])
                     for key in output_shape.keys()
                 }
 
 
     def call(self, data, training=None):
-        #print("entered")
+
 
         # in 2D, shape is [batch_size, max_points, x/y/val] x 3 planes
 
         # in 3D, shape is [batch_size, max_points, x/y/z/val]
 
-        print(data)
 
         tnets = [ self.tnet0(d) for d in data]
 
@@ -118,7 +133,11 @@ class PointNet(tf.keras.layers.Layer):
 
         # Now, we have a rotation matrix for each plane.
         # Apply it to all points.
-        data = [ torch.matmul(r, p) for r, p in zip(rotations, data)]
+        transpose = self.data_format == "channels_last"
+        data = [ tf.linalg.matmul(r, p, transpose_b=transpose) for r, p in zip(rotations, data)]
+
+        if transpose:
+            data = [tf.transpose(d, (0,2,1)) for d in data]
 
 
         # Now apply the MLP to 64 features:
@@ -130,9 +149,11 @@ class PointNet(tf.keras.layers.Layer):
 
         rotations, losses2 = list(zip(*tnets))
         # Apply the new rotations:
-        data = [ torch.matmul(r, p) for r, p in zip(rotations, data)]
+        transpose = self.data_format == "channels_last"
+        data = [ tf.linalg.matmul(r, p, transpose_b=transpose) for r, p in zip(rotations, data)]
 
-
+        if transpose:
+            data = [tf.transpose(d, (0,2,1)) for d in data]
 
 
         # The next MLPs:
@@ -140,15 +161,33 @@ class PointNet(tf.keras.layers.Layer):
 
         # Next, we maxpool over each plane:
         shape = data[0].shape[2:]
-        data = [ torch.squeeze(torch.nn.functional.max_pool1d(d, kernel_size=shape)) for d in data ]
+
+
+        # How many points are we pooling?
+        if self.data_format == "channels_last":
+            pool_size = data[0].shape[1]
+        elif self.data_format == "channels_first":
+            pool_size = data[0].shape[2]
+        
+        #pooling layer:
+        pooling = tf.keras.layers.MaxPool1D(pool_size=pool_size, data_format=self.data_format)
+
+
+        data = [ tf.squeeze(pooling(d)) for d in data ]
 
 
         # For the outputs, we concatenate across all 3 planes and have a unique series of MLPs for each
         # Category of output
 
-        data = torch.cat(data, axis=-1)
-        data = torch.reshape(data, data.shape + (1,))
 
-        outputs = { key : torch.squeeze(self.final_mlp[key](data)) for key in self.final_mlp.keys() }
+        data = tf.concat(data, axis=-1)
+
+        data = tf.reshape(data, data.shape + (1,))
+        if transpose:
+            data = tf.transpose(data, (0,2,1))
+
+
+        outputs = { key : tf.squeeze(self.final_mlp[key](data)) for key in self.final_mlp.keys() }
+
 
         return outputs
