@@ -301,7 +301,7 @@ class trainer(trainercore):
 
         self.tape = tf.GradientTape()
 
-    @tf.function
+    # @tf.function
     def _compute_metrics(self, logits, prediction, minibatch_data, loss):
 
 
@@ -318,7 +318,7 @@ class trainer(trainercore):
 
         return metrics
 
-    @tf.function
+    # @tf.function
     def _calculate_accuracy(self, prediction, minibatch_data):
         ''' Calculate the accuracy.
 
@@ -380,6 +380,8 @@ class trainer(trainercore):
                 else:
                     # This is repetitive from below, but might need to be adjusted eventually.
                     minibatch_data[key] = tf.convert_to_tensor(minibatch_data[key], dtype=input_dtype)
+                    if self.args.framework.data_format == "channels_last":
+                        minibatch_data[key] = tf.transpose(minibatch_data[key], perm=(0,2,1))
             else:
                 if key == 'image' or 'label' in key:
                     minibatch_data[key]= tf.convert_to_tensor(minibatch_data[key], dtype=input_dtype)
@@ -483,7 +485,7 @@ class trainer(trainercore):
         return
 
 
-    @tf.function
+    # @tf.function
     def gradient_step(self, minibatch_data):
 
         with self.tape:
