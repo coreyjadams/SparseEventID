@@ -16,6 +16,7 @@ class MLP(tf.keras.layers.Layer):
 
         self.relu = tf.keras.layers.ReLU()
 
+    @tf.function
     def call(self, data):
         return self.relu(self.bn(self.mlp(data)))
 
@@ -52,6 +53,7 @@ class TNet(tf.keras.layers.Layer):
             tf.keras.layers.Dense(256), tf.keras.layers.ReLU()]
             )
 
+    @tf.function
     def call(self, data):
 
 
@@ -118,6 +120,7 @@ class PointNet(tf.keras.layers.Layer):
                 }
 
     
+    @tf.function
     def call(self, data, training=None):
 
 

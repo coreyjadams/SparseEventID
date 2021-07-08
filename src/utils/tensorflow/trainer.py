@@ -301,7 +301,7 @@ class trainer(trainercore):
 
         self.tape = tf.GradientTape()
 
-    # @tf.function
+    @tf.function
     def _compute_metrics(self, logits, prediction, minibatch_data, loss):
 
 
@@ -318,7 +318,7 @@ class trainer(trainercore):
 
         return metrics
 
-    # @tf.function
+    @tf.function
     def _calculate_accuracy(self, prediction, minibatch_data):
         ''' Calculate the accuracy.
 
@@ -485,7 +485,7 @@ class trainer(trainercore):
         return
 
 
-    # @tf.function
+    @tf.function
     def gradient_step(self, minibatch_data):
 
         with self.tape:
@@ -525,8 +525,12 @@ class trainer(trainercore):
             # Fetch the next batch of data with larcv
             io_start_time = datetime.datetime.now()
             minibatch_data = self.larcv_fetcher.fetch_next_batch("primary",force_pop=True)
+
+            # Extract the tensors only:
             minibatch_data = self.cast_input(minibatch_data)
 
+            minibatch_data = {
+                key : minibatch_data[key] for key in minibatch_data if tf.is_tensor(minibatch_data[key])}
             io_end_time = datetime.datetime.now()
             io_fetch_time += (io_end_time - io_start_time).total_seconds()
 
