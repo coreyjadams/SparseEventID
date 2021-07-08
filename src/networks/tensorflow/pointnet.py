@@ -117,7 +117,7 @@ class PointNet(tf.keras.layers.Layer):
                     for key in output_shape.keys()
                 }
 
-
+    
     def call(self, data, training=None):
 
 

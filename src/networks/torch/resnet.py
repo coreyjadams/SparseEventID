@@ -2,57 +2,6 @@ import torch
 import torch.nn as nn
 
 
-from . network_config import network_config, str2bool
-
-#
-# The 3D convolution method for 2D images is very, very slow.
-# Much faster to use 2D convolutions 3 times
-
-class ResNetFlags(network_config):
-
-    def __init__(self):
-        network_config.__init__(self)
-        self._name = "resnet2d"
-        self._help = "Dense Resnet with siamese tower structure"
-
-    def build_parser(self, network_parser):
-        # this_parser = network_parser
-        this_parser = network_parser.add_parser(self._name, help=self._help)
-
-        this_parser.add_argument("--n-initial-filters",
-            type    = int,
-            default = 2,
-            help    = "Number of filters applied, per plane, for the initial convolution")
-
-        this_parser.add_argument("--res-blocks-per-layer",
-            help    = "Number of residual blocks per layer",
-            type    = int,
-            default = 2)
-
-        this_parser.add_argument("--network-depth-pre-merge",
-            help    = "Total number of downsamples to apply before merging planes",
-            type    = int,
-            default = 4)
-
-        this_parser.add_argument("--network-depth-post-merge",
-            help    = "Total number of downsamples to apply after merging planes",
-            type    = int,
-            default = 2)
-
-        this_parser.add_argument("--nplanes",              
-            help    = "Number of planes to split the initial image into",
-            type    = int,
-            default = 3)
-
-        this_parser.add_argument("--batch-norm",
-            help    = "Run using batch normalization",
-            type    = str2bool,
-            default = True)
-
-
-
-
-
 
 class Block(nn.Module):
 
