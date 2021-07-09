@@ -94,7 +94,6 @@ class larcv_fetcher(object):
                 self.keyword_label.append(key)
 
 
-
         self._larcv_interface.prepare_manager(name, io_config, batch_size, data_keys, color=color)
         os.unlink(main_file.name)
 
@@ -134,19 +133,21 @@ class larcv_fetcher(object):
         if not force_pop:
             pop = False
 
+
         while self._larcv_interface.is_reading(name):
             # print("Sleeping in larcv_fetcher")
-            time.sleep(0.1)
+            time.sleep(0.01)
 
         minibatch_data = self._larcv_interface.fetch_minibatch_data(name,
             pop=pop,fetch_meta_data=metadata)
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(name)
 
+
         # This brings up the next data to current data
         if pop:
             # print(f"Preparing next {name}")
             self._larcv_interface.prepare_next(name)
-            time.sleep(0.1)
+            # time.sleep(0.1)
 
 
         # If the returned data is None, return none and don't load more:
