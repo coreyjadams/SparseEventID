@@ -290,9 +290,7 @@ class trainer(trainercore):
 
         # Fetch the next batch of data with larcv
         io_start_time = datetime.datetime.now()
-        print("Fetching primary data")
         minibatch_data = self.larcv_fetcher.fetch_next_batch("primary",force_pop = True)
-        print("Done fetching primary data")
         io_end_time = datetime.datetime.now()
 
         minibatch_data = self.to_torch(minibatch_data)
