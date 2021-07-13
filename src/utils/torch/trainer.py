@@ -382,9 +382,7 @@ class trainer(trainercore):
 
                 # Fetch the next batch of data with larcv
                 # (Make sure to pull from the validation set)
-                print("Fetching val data")
                 minibatch_data = self.larcv_fetcher.fetch_next_batch("val",force_pop = True)
-                print("Done fetching val data")
                 # Convert the input data to torch tensors
                 minibatch_data = self.to_torch(minibatch_data)
 
