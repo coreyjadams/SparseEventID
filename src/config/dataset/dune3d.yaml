@@ -1,5 +1,5 @@
 label:          Classification
-data_directory: /grand/projects/datascience/cadams/datasets/DUNE/pixsim_small/
+data_directory: /grand/datascience/cadams/datasets/DUNE/pixsim_small/
 train_file:     merged_sample_chunk8_100.h5
 test_file:      none
 val_file:       none.h5
