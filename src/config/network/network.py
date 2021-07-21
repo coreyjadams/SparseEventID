@@ -34,8 +34,11 @@ class ResNet(Network):
 
 @dataclass:
 class DGCNN(Network):
-    name:        str:       = DGCNN
+    name:        str:       = "dgcnn"
     data_format: DataFormat = DataFormat.graph
+    k:           int        = MISSING
+    emb_dims:    int        = MISSING
+    dropout:     float      = MISSING
 
 cs = ConfigStore.instance()
 cs.store(group="network", name="pointnet", node=PointNet)
