@@ -15,21 +15,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MLP(torch.nn.Module):
-    def __init__(self, input_size, output_size):
-        torch.nn.Module.__init__(self)
-
-        self.mlp = torch.nn.Conv1d(
-            in_channels  = input_size,
-            out_channels = output_size,
-            kernel_size  = (1))
-
-        self.bn = torch.nn.BatchNorm1d(num_features=output_size)
-
-        self.relu = torch.nn.ReLU()
-
-    def forward(self, data):
-        return self.relu(self.bn(self.mlp(data)))
 
 def knn(x, k):
     inner = -2*torch.matmul(x.transpose(2, 1), x)
@@ -95,6 +80,7 @@ class PointNet(nn.Module):
 
     def forward(self, x):
         # TODO: adapt to data dimmensions
+        for d in 
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
@@ -143,22 +129,11 @@ class DGCNN(nn.Module):
 
         # Modification:
         # self.linear3 = nn.Linear(256, output_channels)
-
         self.linear3 = torch.nn.ModuleDict(
-                { key : MLP(256*3, output_shape[key][-1])
-                   for key in output_shape.keys()
+                { key : torch.nn.Linear(256, output_shape[key][-1])
+                    for key in output_shape.keys()
                 }
             )
-
-        # self.final_mlp = torch.nn.ModuleDict(
-        #        { key : torch.nn.Sequential(
-        #                MLP(3*1024, 512),
-        #                MLP(512, 256),
-        #                MLP(256, output_shape[key][-1])
-        #                )
-        #            for key in output_shape.keys()
-        #        }
-        #    )
 
 
     def forward(self, data):
@@ -205,5 +180,6 @@ class DGCNN(nn.Module):
 
         data = torch.cat(data, axis=-1)
         data = torch.reshape(data, data.shape + (1,))
+        print(data.shape)
         outputs = { key: torch.squeeze(self.linear3[key](data)) for key in self.linear3.keys() }
         return outputs

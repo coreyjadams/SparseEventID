@@ -1,0 +1,9 @@
+- mode=train
+- run.id=0
+- framework=torch
+- run.compute_mode=GPU
+- run.minibatch_size=16
+- run.iterations=1000
+- run.distributed=True
+- dataset=dune2d
+- network=dgcnn
