@@ -100,14 +100,15 @@ hydra:
     - run.id=0
     - framework=torch
     - run.compute_mode=GPU
-    - run.minibatch_size=16
-    - run.iterations=1000
-    - run.distributed=True
+    - run.minibatch_size=2
+    - run.iterations=10
+    - run.distributed=False
+    - run.profile=True
     - dataset=dune2d
     - network=dgcnn
   job:
     name: exec
-    override_dirname: dataset=dune2d,framework=torch,mode=train,network=dgcnn,run.compute_mode=GPU,run.distributed=True,run.id=0,run.iterations=1000,run.minibatch_size=16
+    override_dirname: dataset=dune2d,framework=torch,mode=train,network=dgcnn,run.compute_mode=GPU,run.distributed=False,run.id=0,run.iterations=10,run.minibatch_size=2,run.profile=True
     id: ???
     num: ???
     config_name: config

@@ -16,6 +16,11 @@ from torch.utils.tensorboard import SummaryWriter
 import logging
 logger = logging.getLogger()
 
+import contextlib
+@contextlib.contextmanager
+def dummycontext():
+    yield None
+
 
 class trainer(trainercore):
     '''
@@ -297,9 +302,11 @@ class trainer(trainercore):
         minibatch_data = self.to_torch(minibatch_data)
 
 
+        use_cuda=torch.cuda.is_available()
+
         # HPC Profiling
-        if self.args.profile:
-            if not self.args.distributed or self._rank == 0:
+        if self.args.run.profile:
+            if not self.args.run.distributed or self._rank == 0:
                 autograd_prof = torch.autograd.profiler.profile(use_cuda = use_cuda)
             else:
                 autograd_prof = dummycontext()
@@ -309,7 +316,7 @@ class trainer(trainercore):
         with autograd_prof as prof:
 
             # if mixed precision, and cuda, use autocast:
-            if self.args.precision == "mixed" and self.args.compute_mode == "GPU":
+            if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
                 with torch.cuda.amp.autocast():
                     logits = self._net(minibatch_data['image'])
             else:
@@ -331,8 +338,8 @@ class trainer(trainercore):
         metrics = self._compute_metrics(logits, minibatch_data, loss)
 
         # save profile data per step
-        if self.args.profile:
-            if not self.args.distributed or self._rank == 0:
+        if self.args.run.profile:
+            if not self.args.run.distributed or self._rank == 0:
                 prof.export_chrome_trace("timeline_" + str(self._global_step) + ".json")
 
 

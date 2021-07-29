@@ -1,6 +1,7 @@
 log/
 output/
 archived_outputs/
+profile_timeline/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

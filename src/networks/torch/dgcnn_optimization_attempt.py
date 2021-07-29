@@ -33,8 +33,11 @@ class MLP(torch.nn.Module):
 
 def knn(x, k):
     inner = -2*torch.matmul(x.transpose(2, 1), x)
+    inner = inner.to(device='cuda')
     xx = torch.sum(x**2, dim=1, keepdim=True)
+    xx = xx.to(device='cuda')
     pairwise_distance = -xx - inner - xx.transpose(2, 1)
+    pairwise_distance = pairwise_distance.to(device='cuda')
 
     idx = pairwise_distance.topk(k=k, dim=-1)[1]   # (batch_size, num_points, k)
     return idx
@@ -44,22 +47,30 @@ def get_graph_feature(x, k=20, idx=None):
     batch_size = x.size(0)
     num_points = x.size(2)
     x = x.view(batch_size, -1, num_points)
+    x = x.to(device='cuda')
     if idx is None:
         idx = knn(x, k=k)   # (batch_size, num_points, k)
     device = torch.device('cuda')
 
     idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1)*num_points
+    idx_base = idx_base.to(device='cuda')
 
     idx = idx + idx_base
 
     idx = idx.view(-1)
 
+    idx = idx.to(device='cuda')
+
     _, num_dims, _ = x.size()
 
     x = x.transpose(2, 1).contiguous()   # (batch_size, num_points, num_dims)  -> (batch_size*num_points, num_dims) #   batch_size * num_points * k + range(0, batch_size*num_points)
+    
+    x = x.to(device='cuda')
 
     feature = x.view(batch_size*num_points, -1)[idx, :]
     feature = feature.view(batch_size, num_points, k, num_dims) 
+
+    feature = feature.to(device='cuda')
 
     x = x.view(batch_size, num_points, 1, num_dims).repeat(1, 1, k, 1)
 
@@ -152,46 +163,35 @@ class DGCNN(nn.Module):
                 }
             )
 
-        # self.final_mlp = torch.nn.ModuleDict(
-        #        { key : torch.nn.Sequential(
-        #                MLP(3*1024, 512),
-        #                MLP(512, 256),
-        #                MLP(256, output_shape[key][-1])
-        #                )
-        #            for key in output_shape.keys()
-        #        }
-        #    )
-
 
     def forward(self, data):
-        # TODO: adapt this to the data dimmensions
-        # a thought: wrap in for loop and add each x to a data list, make data a tensor, and then at the end do
-        # outputs = { key : torch.squeeze(self.linear3[key](data)) for key in self.final_mlp.keys() }
-        # 2D shape is [batch_size, max_points, x/y/val] x 3 planes
-
-        # go through each plane in the data (there are three of them)
-
         for i in range(len(data)):
                 # get current data plane
                 x = data[i]
+                x = x.to(device='cuda')
                 batch_size = x.size(0)
                 x = get_graph_feature(x, k=self.k)
                 x = self.conv1(x)
                 x1 = x.max(dim=-1, keepdim=False)[0]
+                x1 = x1.to(device='cuda')
 
                 x = get_graph_feature(x1, k=self.k)
                 x = self.conv2(x)
                 x2 = x.max(dim=-1, keepdim=False)[0]
+                x2 = x2.to(device='cuda')
 
                 x = get_graph_feature(x2, k=self.k)
                 x = self.conv3(x)
                 x3 = x.max(dim=-1, keepdim=False)[0]
+                x3 = x3.to(device='cuda')
 
                 x = get_graph_feature(x3, k=self.k)
                 x = self.conv4(x)
                 x4 = x.max(dim=-1, keepdim=False)[0]
+                x4 = x4.to(device='cuda')
 
                 x = torch.cat((x1, x2, x3, x4), dim=1)
+                x = x.to(device='cuda')
 
                 x = self.conv5(x)
                 x1 = F.adaptive_max_pool1d(x, 1).view(batch_size, -1)

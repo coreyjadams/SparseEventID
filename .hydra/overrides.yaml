@@ -2,8 +2,9 @@
 - run.id=0
 - framework=torch
 - run.compute_mode=GPU
-- run.minibatch_size=16
-- run.iterations=1000
-- run.distributed=True
+- run.minibatch_size=2
+- run.iterations=10
+- run.distributed=False
+- run.profile=True
 - dataset=dune2d
 - network=dgcnn
