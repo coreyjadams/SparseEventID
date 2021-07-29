@@ -30,6 +30,7 @@ class trainer(trainercore):
         # self.larcv_fetcher = threadloader.thread_interface()
         self._iteration       = 0.
         self._global_step     = -1.
+        self._rank            = None
 
     def init_saver(self):
 
@@ -296,8 +297,26 @@ class trainer(trainercore):
         minibatch_data = self.to_torch(minibatch_data)
 
 
-        # Run a forward pass of the model on the input image:
-        logits = self._net(minibatch_data['image'])
+        # HPC Profiling
+        if self.args.profile:
+            if not self.args.distributed or self._rank == 0:
+                autograd_prof = torch.autograd.profiler.profile(use_cuda = use_cuda)
+            else:
+                autograd_prof = dummycontext()
+        else:
+            autograd_prof = dummycontext()
+
+        with autograd_prof as prof:
+
+            # if mixed precision, and cuda, use autocast:
+            if self.args.precision == "mixed" and self.args.compute_mode == "GPU":
+                with torch.cuda.amp.autocast():
+                    logits = self._net(minibatch_data['image'])
+            else:
+                logits = self._net(minibatch_data['image'])
+
+#        # Run a forward pass of the model on the input image:
+#        logits = self._net(minibatch_data['image'])
 
         # Compute the loss based on the logits
         loss = self._calculate_loss(minibatch_data, logits)
@@ -311,6 +330,10 @@ class trainer(trainercore):
         # Compute any necessary metrics:
         metrics = self._compute_metrics(logits, minibatch_data, loss)
 
+        # save profile data per step
+        if self.args.profile:
+            if not self.args.distributed or self._rank == 0:
+                prof.export_chrome_trace("timeline_" + str(self._global_step) + ".json")
 
 
         # Add the global step / second to the tensorboard log:
