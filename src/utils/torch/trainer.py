@@ -85,8 +85,12 @@ class trainer(trainercore):
                 from src.networks.torch import pointnet3d
                 self._net = pointnet3d.PointNet(output_shape, self.args)
         elif self.args.network.name == "dgcnn":
-            from src.networks.torch import dgcnn
-            self._net = dgcnn.DGCNN(output_shape, self.args)
+            if self.args.dataset.dimension == 2:
+                from src.networks.torch import dgcnn2d
+                self._net = dgcnn2d.DGCNN(output_shape, self.args)
+            else:
+                from src.networks.torch import dgcnn3d
+                self._net = dgcnn3d.DGCNN(output_shape, self.args)
         else:
             raise Exception(f"Couldn't identify network {self.args.network.name}")
 
