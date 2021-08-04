@@ -1,9 +1,6 @@
 network:
-  name: dgcnn
+  name: pointnet
   data_format: graph
-  k: 20
-  emb_dims: 1024
-  dropout: 0.5
 framework:
   name: torch
   distributed_mode: DDP
@@ -24,14 +21,13 @@ dataset:
   train_file: train.h5
   test_file: none
   val_file: test.h5
-  imgaes: 3
-  access_mode: serial_access
-  dimension: 2
+  access_mode: random_blocks
+  dimension: 3
 run:
   distributed: false
   compute_mode: GPU
   iterations: 10
-  minibatch_size: 2
+  minibatch_size: 4
   aux_minibatch_size: ${run.minibatch_size}
   aux_iterations: 10
   id: 0

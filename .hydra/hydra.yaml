@@ -100,15 +100,15 @@ hydra:
     - run.id=0
     - framework=torch
     - run.compute_mode=GPU
-    - run.minibatch_size=2
+    - run.minibatch_size=4
     - run.iterations=10
     - run.distributed=False
     - run.profile=True
-    - dataset=dune2d
-    - network=dgcnn
+    - dataset=dune3d
+    - network=pointnet
   job:
     name: exec
-    override_dirname: dataset=dune2d,framework=torch,mode=train,network=dgcnn,run.compute_mode=GPU,run.distributed=False,run.id=0,run.iterations=10,run.minibatch_size=2,run.profile=True
+    override_dirname: dataset=dune3d,framework=torch,mode=train,network=pointnet,run.compute_mode=GPU,run.distributed=False,run.id=0,run.iterations=10,run.minibatch_size=4,run.profile=True
     id: ???
     num: ???
     config_name: config
@@ -133,10 +133,10 @@ hydra:
       schema: structured
       provider: schema
     choices:
-      dataset: dune2d
+      dataset: dune3d
       mode: train
       framework: torch
-      network: dgcnn
+      network: pointnet
       hydra/env: default
       hydra/callbacks: null
       hydra/job_logging: disabled

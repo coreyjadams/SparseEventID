@@ -305,15 +305,15 @@ class trainer(trainercore):
 
         minibatch_data = self.to_torch(minibatch_data)
 
+
         use_cuda=torch.cuda.is_available()
 
-        # HPC Profiling with Torch Profiler
+
+        # Pytorch Profiler - CPU
         if self.args.run.profile:
-            print("Setting up profiler")
             if not self.args.run.distributed or self._rank == 0:
-                # torch_prof = profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True)
-                # this is actually the older autograd profiler
-                torch_prof = torch.autograd.profiler.profile(record_shapes=True, profile_memory=True, use_cuda=use_cuda)
+                torch_prof = profile(activities=[ProfilerActivity.CPU], record_shapes=True,
+                    profile_memory=True, use_cuda=use_cuda)
             else:
                 torch_prof = dummycontext()
         else:
@@ -321,31 +321,53 @@ class trainer(trainercore):
 
         with torch_prof as prof:
             with record_function("model_training"):
-                # if mixed precision, and cuda, use autocast:
-                if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
+                if self.args.precision == "mixed" and self.args.compute_mode == "GPU":
                     with torch.cuda.amp.autocast():
-                        logits = self._net(minibatch_data['image'])
-                else:
-                    logits = self._net(minibatch_data['image'])
+                        
+                self._net(minibatch_data['image])
 
-                # Compute the loss based on the logits
-                loss = self._calculate_loss(minibatch_data, logits)
-
-                # Compute the gradients for the network parameters:
-                loss.backward()
-
-                first_param = next(self._net.parameters())
+        print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
 
 
-                # Compute any necessary metrics:
-                metrics = self._compute_metrics(logits, minibatch_data, loss)
+
+#        # HPC Profiling - old torch autograd profiler
+#        if self.args.run.profile:
+#            if not self.args.run.distributed or self._rank == 0:
+#                autograd_prof = torch.autograd.profiler.profile(record_shapes=True, profile_memory=True, use_cuda=use_cuda)
+#            else:
+#                autograd_prof = dummycontext()
+#        else:
+#            autograd_prof = dummycontext()
+#
+#        with autograd_prof as prof:
+#
+#            # if mixed precision, and cuda, use autocast:
+#            if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
+#                with torch.cuda.amp.autocast():
+#                    logits = self._net(minibatch_data['image'])
+#            else:
+#                logits = self._net(minibatch_data['image'])
+
+        # Run a forward pass of the model on the input image:
+        logits = self._net(minibatch_data['image'])
+
+        # Compute the loss based on the logits
+        loss = self._calculate_loss(minibatch_data, logits)
+
+        # Compute the gradients for the network parameters:
+        loss.backward()
+
+        first_param = next(self._net.parameters())
+
+
+        # Compute any necessary metrics:
+        metrics = self._compute_metrics(logits, minibatch_data, loss)
 
         # save profile data per step
         if self.args.run.profile:
             if not self.args.run.distributed or self._rank == 0:
                 prof.export_chrome_trace("timeline_" + str(self._global_step) + ".json")
 
-        print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
 
         # Add the global step / second to the tensorboard log:
         try:
