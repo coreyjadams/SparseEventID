@@ -16,6 +16,15 @@ from torch.utils.tensorboard import SummaryWriter
 import logging
 logger = logging.getLogger()
 
+# torch profiler imports
+from torch.profiler import profile, record_function, ProfilerActivity
+
+
+import contextlib
+@contextlib.contextmanager
+def dummycontext():
+    yield None
+
 
 class trainer(trainercore):
     '''
@@ -30,6 +39,7 @@ class trainer(trainercore):
         # self.larcv_fetcher = threadloader.thread_interface()
         self._iteration       = 0.
         self._global_step     = -1.
+        self._rank            = None
 
     def init_saver(self):
 
@@ -75,8 +85,12 @@ class trainer(trainercore):
                 from src.networks.torch import pointnet3d
                 self._net = pointnet3d.PointNet(output_shape, self.args)
         elif self.args.network.name == "dgcnn":
-            from src.networks.torch import dgcnn
-            self._net = dgcnn.DGCNN(output_shape, self.args)
+            if self.args.dataset.dimension == 2:
+                from src.networks.torch import dgcnn2d
+                self._net = dgcnn2d.DGCNN(output_shape, self.args)
+            else:
+                from src.networks.torch import dgcnn3d
+                self._net = dgcnn3d.DGCNN(output_shape, self.args)
         else:
             raise Exception(f"Couldn't identify network {self.args.network.name}")
 
@@ -295,23 +309,47 @@ class trainer(trainercore):
 
         minibatch_data = self.to_torch(minibatch_data)
 
+        use_cuda=torch.cuda.is_available()
 
-        # Run a forward pass of the model on the input image:
-        logits = self._net(minibatch_data['image'])
+        # HPC Profiling with Torch Profiler
+        if self.args.run.profile:
+            print("Setting up profiler")
+            if not self.args.run.distributed or self._rank == 0:
+                # torch_prof = profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True)
+                # this is actually the older autograd profiler
+                torch_prof = torch.autograd.profiler.profile(record_shapes=True, profile_memory=True, use_cuda=use_cuda)
+            else:
+                torch_prof = dummycontext()
+        else:
+            torch_prof = dummycontext()
 
-        # Compute the loss based on the logits
-        loss = self._calculate_loss(minibatch_data, logits)
+        with torch_prof as prof:
+            with record_function("model_training"):
+                # if mixed precision, and cuda, use autocast:
+                if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
+                    with torch.cuda.amp.autocast():
+                        logits = self._net(minibatch_data['image'])
+                else:
+                    logits = self._net(minibatch_data['image'])
 
-        # Compute the gradients for the network parameters:
-        loss.backward()
+                # Compute the loss based on the logits
+                loss = self._calculate_loss(minibatch_data, logits)
 
-        first_param = next(self._net.parameters())
+                # Compute the gradients for the network parameters:
+                loss.backward()
+
+                first_param = next(self._net.parameters())
 
 
-        # Compute any necessary metrics:
-        metrics = self._compute_metrics(logits, minibatch_data, loss)
+                # Compute any necessary metrics:
+                metrics = self._compute_metrics(logits, minibatch_data, loss)
 
+        # save profile data per step
+        if self.args.run.profile:
+            if not self.args.run.distributed or self._rank == 0:
+                prof.export_chrome_trace("timeline_" + str(self._global_step) + ".json")
 
+        print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
 
         # Add the global step / second to the tensorboard log:
         try:
