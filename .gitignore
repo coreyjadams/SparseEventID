@@ -1,3 +1,5 @@
+*.json 
+
 log/
 output/
 archived_outputs/

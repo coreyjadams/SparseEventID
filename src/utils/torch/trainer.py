@@ -349,7 +349,7 @@ class trainer(trainercore):
             if not self.args.run.distributed or self._rank == 0:
                 prof.export_chrome_trace("timeline_" + str(self._global_step) + ".json")
 
-        print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+                print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
 
         # Add the global step / second to the tensorboard log:
         try:

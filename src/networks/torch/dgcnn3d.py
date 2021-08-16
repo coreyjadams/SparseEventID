@@ -59,7 +59,7 @@ def get_graph_feature(x, k=20, idx=None):
     x = x.transpose(2, 1).contiguous()   # (batch_size, num_points, num_dims)  -> (batch_size*num_points, num_dims) #   batch_size * num_points * k + range(0, batch_size*num_points)
 
     feature = x.view(batch_size*num_points, -1)[idx, :]
-    feature = feature.view(batch_size, num_points, k, num_dims) 
+    feature = feature.view(batch_size, num_points, k, num_dims)
 
     x = x.view(batch_size, num_points, 1, num_dims).repeat(1, 1, k, 1)
 
@@ -120,7 +120,7 @@ class DGCNN(nn.Module):
 
         # go through each plane in the data (there are three of them)
 
-        print("input data shape: ", data.shape)
+        print("input data shape: ", x.shape)
 
         batch_size = x.size(0)
         x = get_graph_feature(x, k=self.k)
