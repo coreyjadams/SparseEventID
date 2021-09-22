@@ -11,6 +11,8 @@ import h5py
 import logging
 logger = logging.getLogger()
 
+from larcv import ConfigBuilder
+
 class larcv_fetcher(object):
 
     def __init__(self, mode, distributed, dataset, data_format, seed=None):
@@ -56,36 +58,56 @@ class larcv_fetcher(object):
         if not os.path.exists(input_file):
             raise Exception(f"File {input_file} not found")
 
-        config = io_templates.dataset_io(
-                name        = name,
-                input_file  = input_file,
-                image_dim   = self.input_dimension)
+
+        cb = ConfigBuilder()
+        cb.set_parameter([input_file], "InputFiles")
+        # cb.set_parameter(True, "ProcessDriver", "RandomAccess")
+        
+        # Build up the data_keys:
+        data_keys = {}
+        data_keys['image'] = name+'data'
 
 
-        # Generate a named temp file:
-        main_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
-        main_file.write(config.generate_config_str())
+        # Need to load up on data fillers.
+        if self.input_dimension == 2:
+            cb.add_batch_filler(
+                datatype  = "sparse2d", 
+                producer  = "dunevoxels", 
+                name      = name+"data",
+                MaxVoxels = 20000,
+                Augment   = False
+                )
 
+        else:
+            cb.add_batch_filler(
+                datatype  = "sparse3d", 
+                producer  = "dunevoxels", 
+                name      = name+"data",
+                MaxVoxels = 30000,
+                Augment   = False
+                )
 
-        main_file.close()
+        logger.info(cb.print_config())
 
+        # Add the label configs:
+        for label_name, l in zip(['neut', 'prot', 'cpi', 'npi'], [3, 3, 2, 2]):
+            cb.add_batch_filler(
+                datatype     = "particle",
+                producer     = f"{label_name}ID",
+                name         = f'label_{label_name}',
+                PdgClassList = [i for i in range(l)]
+            )
+            data_keys[f'label_{label_name}'] = f'label_{label_name}'
+
+        logger.info(cb.print_config())
 
         # Prepare data managers:
         io_config = {
-            'filler_name' : config._name,
-            'filler_cfg'  : main_file.name,
+            'filler_name' : name,
+            'filler_cfg'  : cb.get_config(),
             'verbosity'   : 5,
             'make_copy'   : False
         }
-
-        # Build up the data_keys:
-        data_keys = {}
-        data_keys['image'] = 'data'
-        for proc in config._process_list._processes:
-            if proc._name == 'data':
-                continue
-            else:
-                data_keys[proc._name] = proc._name
 
         # Assign the keywords here:
         self.keyword_label = []
@@ -93,9 +115,10 @@ class larcv_fetcher(object):
             if key != 'image':
                 self.keyword_label.append(key)
 
+        print(data_keys)
+
 
         self._larcv_interface.prepare_manager(name, io_config, batch_size, data_keys, color=color)
-        os.unlink(main_file.name)
 
 
         if self.mode == "inference":

@@ -1,6 +1,6 @@
 label:          Classification
-data_directory: /grand/datascience/cadams/datasets/DUNE/pixsim_small/
-train_file:     train.h5
+data_directory: /Users/corey.adams/data/DUNE/pixsim_small/
+train_file:     test.h5
 test_file:      none
 val_file:       test.h5
 imgaes:         3
