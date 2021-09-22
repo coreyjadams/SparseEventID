@@ -1,5 +1,8 @@
 *.json 
 
+#hydra:
+.hydra/
+
 log/
 output/
 archived_outputs/
