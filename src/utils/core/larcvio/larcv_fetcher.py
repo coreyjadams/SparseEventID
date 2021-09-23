@@ -2,7 +2,6 @@ import os
 import time
 
 from . import data_transforms
-from . import io_templates
 import tempfile
 
 import numpy
@@ -11,7 +10,7 @@ import h5py
 import logging
 logger = logging.getLogger()
 
-from larcv import ConfigBuilder
+from larcv.config_builder import ConfigBuilder
 
 class larcv_fetcher(object):
 
@@ -61,7 +60,9 @@ class larcv_fetcher(object):
 
         cb = ConfigBuilder()
         cb.set_parameter([input_file], "InputFiles")
-        # cb.set_parameter(True, "ProcessDriver", "RandomAccess")
+        cb.set_parameter(5, "ProcessDriver", "IOManager", "Verbosity")
+        cb.set_parameter(5, "ProcessDriver", "Verbosity")
+        cb.set_parameter(5, "Verbosity")
         
         # Build up the data_keys:
         data_keys = {}
@@ -87,7 +88,19 @@ class larcv_fetcher(object):
                 Augment   = False
                 )
 
-        logger.info(cb.print_config())
+        # Add something to convert the neutrino particles into bboxes:
+        cb.add_preprocess(
+            datatype = "particle",
+            producer = "neutrino",
+            process  = "BBoxFromParticle",
+            OutputProducer = "neutrino"
+        )
+        cb.add_batch_filler(
+            datatype  = "bbox3d", 
+            producer  = "neutrino", 
+            name      = name+"bbox",
+            MaxBoxes  = 2,
+            )
 
         # Add the label configs:
         for label_name, l in zip(['neut', 'prot', 'cpi', 'npi'], [3, 3, 2, 2]):
@@ -99,7 +112,7 @@ class larcv_fetcher(object):
             )
             data_keys[f'label_{label_name}'] = f'label_{label_name}'
 
-        logger.info(cb.print_config())
+        logger.debug(cb.print_config())
 
         # Prepare data managers:
         io_config = {
@@ -115,7 +128,8 @@ class larcv_fetcher(object):
             if key != 'image':
                 self.keyword_label.append(key)
 
-        print(data_keys)
+        data_keys.update({"vertex" : name+"bbox"})
+
 
 
         self._larcv_interface.prepare_manager(name, io_config, batch_size, data_keys, color=color)
