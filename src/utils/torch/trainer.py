@@ -302,14 +302,10 @@ class trainer(trainercore):
         # Reset the gradient values for this step:
         self._opt.zero_grad()
 
-        # Fetch the next batch of data with larcv
-        io_start_time = datetime.datetime.now()
-        minibatch_data = self.larcv_fetcher.fetch_next_batch("primary",force_pop = True)
-        io_end_time = datetime.datetime.now()
+        metrics = {}
+        io_fetch_time = 0.0
 
-        minibatch_data = self.to_torch(minibatch_data)
-
-        use_cuda=torch.cuda.is_available()
+        grad_accum = self.args.mode.optimizer.gradient_accumulation
 
         # HPC Profiling with Torch Profiler
         if self.args.run.profile:
@@ -324,42 +320,61 @@ class trainer(trainercore):
             torch_prof = dummycontext()
 
         with torch_prof as prof:
-            with record_function("model_training"):
-                # if mixed precision, and cuda, use autocast:
-                if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
-                    with torch.cuda.amp.autocast():
-                        logits = self._net(minibatch_data['image'])
-                else:
-                    logits = self._net(minibatch_data['image'])
 
-                # Compute the loss based on the logits
-                loss = self._calculate_loss(minibatch_data, logits)
+            for interior_batch in range(grad_accum):
+
+                # Fetch the next batch of data with larcv
+                io_start_time = datetime.datetime.now()
+                minibatch_data = self.larcv_fetcher.fetch_next_batch("primary",force_pop = True)
+                io_end_time = datetime.datetime.now()
+                io_fetch_time = (io_end_time - io_start_time).total_seconds()
+
+                minibatch_data = self.to_torch(minibatch_data)
+
+                use_cuda=torch.cuda.is_available()
+
+                with record_function("model_training"):
+                    # if mixed precision, and cuda, use autocast:
+                    if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
+                        with torch.cuda.amp.autocast():
+                            logits = self._net(minibatch_data['image'])
+                    else:
+                        logits = self._net(minibatch_data['image'])
+
+                with record_function("backwards_pass"):
+                    # Compute the loss based on the logits
+                    loss = self._calculate_loss(minibatch_data, logits)
 
                 # Compute the gradients for the network parameters:
-                loss.backward()
-
+                if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
+                    self.scaler.scale(loss).backward()
+                else:
+                    loss.backward()
                 first_param = next(self._net.parameters())
 
 
                 # Compute any necessary metrics:
-                metrics = self._compute_metrics(logits, minibatch_data, loss)
+                interior_metrics = self._compute_metrics(logits, minibatch_data, loss)
 
-        # save profile data per step
-        if self.args.run.profile:
-            if not self.args.run.distributed or self._rank == 0:
-                prof.export_chrome_trace("timeline_" + str(self._global_step) + ".json")
+                for key in interior_metrics:
+                    if key in metrics:
+                        metrics[key] += interior_metrics[key]
+                    else:
+                        metrics[key] = interior_metrics[key]
 
-                print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+        # Here, make sure to normalize the interior metrics:
+        for key in metrics:
+            metrics[key] /= grad_accum
 
         # Add the global step / second to the tensorboard log:
         try:
             metrics['global_step_per_sec'] = 1./self._seconds_per_global_step
-            metrics['images_per_second'] = self.args.run.minibatch_size / self._seconds_per_global_step
+            metrics['images_per_second'] = grad_accum * self.args.run.minibatch_size / self._seconds_per_global_step
         except:
             metrics['global_step_per_sec'] = 0.0
             metrics['images_per_second'] = 0.0
 
-        metrics['io_fetch_time'] = (io_end_time - io_start_time).total_seconds()
+        metrics['io_fetch_time'] = io_fetch_time / grad_accum
 
 
         step_start_time = datetime.datetime.now()

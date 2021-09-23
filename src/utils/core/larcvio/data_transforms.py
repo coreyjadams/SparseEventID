@@ -207,8 +207,10 @@ def larcvsparse_to_pointcloud_2d(input_array):
     # output = [ numpy.zeros(shape=[batch_size, 1, npoints, 3]) for plane in nplanes]
 
     # Loop over minibatch index:
-
+    print(input_array.shape)
     output = numpy.split(input_array,3, axis=1)
+
+    final_shape = (batch_size, npoints, 3)
 
 
     for o in output:
@@ -218,8 +220,9 @@ def larcvsparse_to_pointcloud_2d(input_array):
         o[coords[0],0, coords[1],1] = 0
         o[coords[0],0, coords[1],2] = 0
 
-
+    print("output[0].shape: ", output[0].shape)
     output = [ numpy.transpose(numpy.squeeze(o), axes=(0, 2, 1)) for o in output]
+    print("output[0].shape: ", output[0].shape)
 
 
 

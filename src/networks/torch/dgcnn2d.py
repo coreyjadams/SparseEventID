@@ -113,6 +113,8 @@ class DGCNN(nn.Module):
         # Modification:
         # self.linear3 = nn.Linear(256, output_channels)
 
+        self.output_shape = { key : tuple(output_shape[key]) for key in output_shape }
+
         self.linear3 = torch.nn.ModuleDict(
                 { key : MLP(256*3, output_shape[key][-1])
                    for key in output_shape.keys()
@@ -174,5 +176,11 @@ class DGCNN(nn.Module):
 
         data = torch.cat(data, axis=-1)
         data = torch.reshape(data, data.shape + (1,))
-        outputs = { key: torch.squeeze(self.linear3[key](data)) for key in self.linear3.keys() }
+
+        outputs = {
+            key: torch.reshape(self.linear3[key](data), self.output_shape[key])
+            for key in self.output_shape
+        }
+
+        # outputs = { key: torch.squeeze(self.linear3[key](data)) for key in self.linear3.keys() }
         return outputs
