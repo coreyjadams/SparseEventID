@@ -193,9 +193,9 @@ class ResNet(torch.nn.Module):
 
 
         # Create the sparse input tensor:
-        # The real spatial size of the inputs is (1333, 1333, 1666)
+        # The real spatial size of the inputs is (900, 500, 1250)
         # But, this size is stupid.
-        self.input_tensor = scn.InputLayer(dimension=3, spatial_size=(1536,1536,1536))
+        self.input_tensor = scn.InputLayer(dimension=3, spatial_size=(1024,512,1280))
 
         # Here, define the layers we will need in the forward path:
 
@@ -258,11 +258,28 @@ class ResNet(torch.nn.Module):
                 for key in output_shape
             })
 
-
+        if 'detect_vertex' in args.network and args.network.detect_vertex:
+            self.detect_vertex=True
+            # How many dense planes?  in 3D yolo we need a classification
+            # score (vertex or not) + regression layer x 3D = 4
+            self.vertex_layer = torch.nn.Sequential(
+                scn.SubmanifoldConvolution(dimension=3,
+                    nIn         = n_filters,
+                    nOut        = 16,
+                    filter_size = 1,
+                    bias        = False),
+                scn.SparseToDense(dimension=3, nPlanes=16),
+                torch.nn.Flatten(),
+                torch.nn.Linear(640, 3),
+                torch.nn.Sigmoid()
+            )
+        else:
+            self.detect_vertex = False
 
 
     def forward(self, x):
 
+        torch.cuda.synchronize()
         batch_size = x[2]
 
         x = self.input_tensor(x)
@@ -275,6 +292,8 @@ class ResNet(torch.nn.Module):
             x = self.convolutional_layers[i](x)
 
         # Apply the final steps to get the right output shape
+
+
 
         output = {}
         for key in self.final_layer:
@@ -293,4 +312,9 @@ class ResNet(torch.nn.Module):
             output[key] = output[key].view([batch_size, output[key].shape[-1]])
 
 
-        return output
+        if self.detect_vertex:
+            vertex = self.vertex_layer(x)
+
+            return output, vertex
+        else:
+            return output

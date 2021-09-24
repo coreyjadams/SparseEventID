@@ -199,21 +199,47 @@ class trainer(trainercore):
 
         return loss
 
+    def _calculate_loss_vertex(self, minibatch_data, vertex):
+        '''MSE vertex loss: x/y/z distance'''
+
+        target = torch.squeeze(minibatch_data['vertex'])
+
+        vertex_loss = 10*torch.nn.functional.mse_loss(target, vertex)
+        # exit()
+        return vertex_loss
 
     def _calculate_accuracy(self, logits, minibatch_data):
         ''' Calculate the accuracy.
 
         '''
-
-        # Compare how often the input label and the output prediction agree:
-
         accuracy = {}
-        for key in logits:
 
-            values, indices = torch.max(minibatch_data[key], dim = 1)
-            values, predict = torch.max(logits[key], dim=1)
-            correct_prediction = torch.eq(predict,indices)
-            accuracy[key] = torch.mean(correct_prediction.float())
+        with torch.no_grad():
+
+            if self.args.network.detect_vertex:
+                # Split things up again
+                logits, vertex = logits
+                # First, compute the difference between target and real in
+                # normalized units:
+
+                acc_temp = (minibatch_data['vertex'] - vertex).cpu()
+
+                # Map this relative accuracy to the detector size:
+                acc_temp *= self.larcv_fetcher.image_dimensions
+
+                accuracy['acc/Vx'] = torch.mean(torch.abs(acc_temp[:,0]))
+                accuracy['acc/Vy'] = torch.mean(torch.abs(acc_temp[:,1]))
+                accuracy['acc/Vz'] = torch.mean(torch.abs(acc_temp[:,2]))
+                abs_acc = torch.sqrt(torch.sum(acc_temp**2, axis=-1))
+                accuracy['acc/Vertex'] = torch.mean(abs_acc)
+
+            # Compare how often the input label and the output prediction agree:
+            for key in logits:
+
+                values, indices = torch.max(minibatch_data[key], dim = 1)
+                values, predict = torch.max(logits[key], dim=1)
+                correct_prediction = torch.eq(predict,indices)
+                accuracy[key] = torch.mean(correct_prediction.float())
 
         return accuracy
 
@@ -333,6 +359,7 @@ class trainer(trainercore):
 
                 use_cuda=torch.cuda.is_available()
 
+
                 with record_function("model_training"):
                     # if mixed precision, and cuda, use autocast:
                     if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
@@ -341,9 +368,17 @@ class trainer(trainercore):
                     else:
                         logits = self._net(minibatch_data['image'])
 
+                if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
+                    logits, vertex = logits
+
                 with record_function("backwards_pass"):
                     # Compute the loss based on the logits
                     loss = self._calculate_loss(minibatch_data, logits)
+                    print(loss)
+                    if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
+                        vtx_loss = self._calculate_loss_vertex(minibatch_data, vertex)
+                        loss += vtx_loss
+                        torch.cuda.synchronize()
 
                 # Compute the gradients for the network parameters:
                 if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
@@ -354,7 +389,11 @@ class trainer(trainercore):
 
 
                 # Compute any necessary metrics:
-                interior_metrics = self._compute_metrics(logits, minibatch_data, loss)
+                if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
+                    interior_metrics = self._compute_metrics((logits, vertex), minibatch_data, loss)
+                    interior_metrics['loss/vertex'] = vtx_loss
+                else:
+                    interior_metrics = self._compute_metrics(logits, minibatch_data, loss)
 
                 for key in interior_metrics:
                     if key in metrics:
@@ -447,14 +486,25 @@ class trainer(trainercore):
                 #     new_key = 'aux_' + key
                 #     logits[new_key] = logits.pop(key)
 
+                if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
+                    logits, vertex = logits
+
 
 
                 # Compute the loss
                 loss = self._calculate_loss(minibatch_data, logits)
+                if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
+                    vtx_loss = self._calculate_loss_vertex(minibatch_data, vertex)
 
-                # Compute the metrics for this iteration:
-                metrics = self._compute_metrics(logits, minibatch_data, loss)
+                    loss += vtx_loss
+                    # Compute the metrics for this iteration:
+                    metrics = self._compute_metrics((logits, vertex), minibatch_data, loss)
+                else:
+                    metrics = self._compute_metrics(logits, minibatch_data, loss)
 
+
+                if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
+                    metrics['loss/vertex'] = vtx_loss
 
                 self.log(metrics, kind="val")
                 self.summary(metrics, kind="val")

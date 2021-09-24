@@ -99,7 +99,6 @@ def larcvsparse_to_scnsparse_2d(input_array):
     output_features = numpy.concatenate(output_features)
     output_dimension = numpy.concatenate(output_dimension)
 
-
     output_list = [output_dimension, output_features, batch_size]
 
     return output_list

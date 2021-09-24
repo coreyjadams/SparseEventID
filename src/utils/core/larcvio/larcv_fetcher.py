@@ -63,7 +63,7 @@ class larcv_fetcher(object):
         cb.set_parameter(5, "ProcessDriver", "IOManager", "Verbosity")
         cb.set_parameter(5, "ProcessDriver", "Verbosity")
         cb.set_parameter(5, "Verbosity")
-        
+
         # Build up the data_keys:
         data_keys = {}
         data_keys['image'] = name+'data'
@@ -72,8 +72,8 @@ class larcv_fetcher(object):
         # Need to load up on data fillers.
         if self.input_dimension == 2:
             cb.add_batch_filler(
-                datatype  = "sparse2d", 
-                producer  = "dunevoxels", 
+                datatype  = "sparse2d",
+                producer  = "dunevoxels",
                 name      = name+"data",
                 MaxVoxels = 20000,
                 Augment   = False
@@ -81,8 +81,8 @@ class larcv_fetcher(object):
 
         else:
             cb.add_batch_filler(
-                datatype  = "sparse3d", 
-                producer  = "dunevoxels", 
+                datatype  = "sparse3d",
+                producer  = "dunevoxels",
                 name      = name+"data",
                 MaxVoxels = 30000,
                 Augment   = False
@@ -96,11 +96,12 @@ class larcv_fetcher(object):
             OutputProducer = "neutrino"
         )
         cb.add_batch_filler(
-            datatype  = "bbox3d", 
-            producer  = "neutrino", 
+            datatype  = "bbox3d",
+            producer  = "neutrino",
             name      = name+"bbox",
             MaxBoxes  = 2,
             )
+
 
         # Add the label configs:
         for label_name, l in zip(['neut', 'prot', 'cpi', 'npi'], [3, 3, 2, 2]):
@@ -133,6 +134,11 @@ class larcv_fetcher(object):
 
 
         self._larcv_interface.prepare_manager(name, io_config, batch_size, data_keys, color=color)
+
+        # TODO: READ THIS FROM IMAGE META:
+        self.vertex_origin    = numpy.asarray([0.,-100.,0.])
+        self.image_dimensions = numpy.asarray([360., 200., 500.])
+
 
 
         if self.mode == "inference":
@@ -191,13 +197,21 @@ class larcv_fetcher(object):
         if minibatch_data is None:
             return minibatch_data
 
-
-
         # Reshape as needed from larcv:
         for key in minibatch_data:
             if key == 'entries' or key == 'event_ids':
                 continue
             minibatch_data[key] = numpy.reshape(minibatch_data[key], minibatch_dims[key])
+
+
+        # Parse out the vertex info:
+        minibatch_data['vertex'] = minibatch_data['vertex'][:,:,0,0:3]
+
+        # Also, we map the vertex from 0 to 1 across the image.  The image size is
+        # [360, 200, 500] and the origin is at [0, -100, 0]
+        minibatch_data['vertex'] += self.vertex_origin
+        minibatch_data['vertex'] /= self.image_dimensions
+
 
         # Here, do some massaging to convert the input data to another format, if necessary:
         if self.image_mode == 'dense':
