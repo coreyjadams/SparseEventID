@@ -1,7 +1,7 @@
 label:          Classification
-data_directory: /lus/grand/projects/datascience/cadams/datasets/DUNE/pixsim_small/
-train_file:     train.h5
+data_directory: /lus/grand/projects/datascience/cadams/datasets/DUNE/full_merged/
+train_file:     pixsim_full_test.h5
 test_file:      none
-val_file:       test.h5
+val_file:       pixsim_full_val.h5
 access_mode:    random_blocks
 dimension:      3

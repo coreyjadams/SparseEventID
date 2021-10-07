@@ -36,8 +36,11 @@ class distributed_trainer(trainer):
             import horovod.torch as hvd
             hvd.init()
             self._rank            = hvd.rank()
-            if self.args.run.compute_mode == "GPU":
-                os.environ['CUDA_VISIBLE_DEVICES'] = str(hvd.local_rank())
+            self._local_rank      = hvd.local_rank()
+
+            # If we're using the sparse network, we try setting CUDA_VISIBLE_DEVICES
+            if self.args.network.data_format == "sparse":
+                os.environ['CUDA_VISIBLE_DEVICES'] = str(self._local_rank)
 
         else:
 
@@ -53,12 +56,16 @@ class distributed_trainer(trainer):
             size = MPI.COMM_WORLD.Get_size()
             rank = MPI.COMM_WORLD.Get_rank()
 
+            # If we're using the sparse network, we try setting CUDA_VISIBLE_DEVICES
+            if self.args.network.data_format == "sparse":
+                os.environ['CUDA_VISIBLE_DEVICES'] = str(local_rank)
+
             os.environ["RANK"] = str(rank)
             os.environ["WORLD_SIZE"] = str(size)
-            os.environ['CUDA_VISIBLE_DEVICES'] = str(local_rank)
 
             self._rank = rank
             self._size = size
+            self._local_rank = local_rank
 
             # It will want the master address too, which we'll broadcast:
             if rank == 0:
@@ -83,6 +90,36 @@ class distributed_trainer(trainer):
         if self._rank == 0:
             trainer.save_model(self)
 
+
+    def default_device_context(self):
+        if 'CUDA_VISIBLE_DEVICES' in os.environ:
+            return trainer.default_device_context(self)
+
+        # Convert the input data to torch tensors
+        if self.args.run.compute_mode == "GPU":
+            return torch.cuda.device(int(self._local_rank))
+        elif self.args.run.compute_mode == "XPU":
+            return contextlib.nullcontext
+            # device = torch.device("xpu")
+        elif self.args.run.compute_mode == "DPCPP":
+            return contextlib.nullcontext
+            # device = torch.device("dpcpp")
+        else:
+            return contextlib.nullcontext
+            # device = torch.device('cpu')
+
+    def default_device(self):
+        if 'CUDA_VISIBLE_DEVICES' in os.environ:
+            return trainer.default_device(self)
+
+        if self.args.run.compute_mode == "GPU":
+            return torch.device(f"cuda:{int(self._local_rank)}")
+        elif self.args.run.compute_mode == "XPU":
+            device = torch.device("xpu")
+        elif self.args.run.compute_mode == "DPCPP":
+            device = torch.device("dpcpp")
+        else:
+            device = torch.device('cpu')
 
     def init_optimizer(self):
 
@@ -132,12 +169,13 @@ class distributed_trainer(trainer):
             # Broadcast the optimizer state:
             hvd.broadcast_optimizer_state(self._opt, root_rank = 0)
 
+            device = self.default_device()
             # Horovod doesn't actually move the optimizer onto a GPU:
             if self.args.run.compute_mode == "GPU":
                 for state in self._opt.state.values():
                     for k, v in state.items():
                         if torch.is_tensor(v):
-                            state[k] = v.cuda()
+                            state[k] = v.to(device)
 
 
 
@@ -146,8 +184,6 @@ class distributed_trainer(trainer):
 
         elif self.args.framework.distributed_mode == "DDP":
 
-            if self.args.run.compute_mode == "GPU":
-                self._net.cuda()
 
             self._net = torch.nn.parallel.DistributedDataParallel(self._net)
 

@@ -191,11 +191,12 @@ class ResNet(torch.nn.Module):
         if scn is None:
             raise Exception("Couldn't import sparse conv net!")
 
+        initial_spatial_size = (1024,512,1280)
 
         # Create the sparse input tensor:
         # The real spatial size of the inputs is (900, 500, 1250)
         # But, this size is stupid.
-        self.input_tensor = scn.InputLayer(dimension=3, spatial_size=(1024,512,1280))
+        self.input_tensor = scn.InputLayer(dimension=3, spatial_size=initial_spatial_size)
 
         # Here, define the layers we will need in the forward path:
 
@@ -215,26 +216,28 @@ class ResNet(torch.nn.Module):
 
 
 
-        self.convolutional_layers = []
+        self.convolutional_layers = torch.nn.ModuleList()
         for layer in range(args.network.network_depth):
 
-            self.convolutional_layers.append(SparseBlockSeries(
-                n_filters,
-                args.network.res_blocks_per_layer,
-                batch_norm = args.network.batch_norm,
-                leaky_relu = args.network.leaky_relu,
-                residual = True))
             out_filters = filter_increase(n_filters, args.network.n_initial_filters)
-            self.convolutional_layers.append(SparseConvolutionDownsample(
-                inplanes = n_filters,
-                batch_norm = args.network.batch_norm,
-                leaky_relu = args.network.leaky_relu,
-                outplanes = out_filters))
-                # outplanes = n_filters + args.network.n_initial_filters))
+
+            layer = torch.nn.Sequential(
+                SparseBlockSeries(
+                    n_filters,
+                    args.network.res_blocks_per_layer,
+                    batch_norm = args.network.batch_norm,
+                    leaky_relu = args.network.leaky_relu,
+                    residual = True),
+                SparseConvolutionDownsample(
+                    inplanes = n_filters,
+                    batch_norm = args.network.batch_norm,
+                    leaky_relu = args.network.leaky_relu,
+                    outplanes = out_filters)
+            )
+
+            self.convolutional_layers.append(layer)
             n_filters = out_filters
 
-            self.add_module("conv_{}".format(layer), self.convolutional_layers[-2])
-            self.add_module("down_{}".format(layer), self.convolutional_layers[-1])
 
         # Here, take the final output and convert to a dense tensor:
 
@@ -258,19 +261,32 @@ class ResNet(torch.nn.Module):
                 for key in output_shape
             })
 
+
         if 'detect_vertex' in args.network and args.network.detect_vertex:
+            downsample = 2**args.network.network_depth
+            final_spatial_size = (i / downsample for i in initial_spatial_size)
+            linear_size = n_filters
+            for i in final_spatial_size:
+                linear_size *= i
+            linear_size = int(linear_size)
             self.detect_vertex=True
             # How many dense planes?  in 3D yolo we need a classification
             # score (vertex or not) + regression layer x 3D = 4
             self.vertex_layer = torch.nn.Sequential(
+                SparseBlockSeries(
+                    inplanes    = n_filters,
+                    n_blocks    = args.network.res_blocks_per_layer,
+                    batch_norm  = args.network.batch_norm,
+                    leaky_relu  = args.network.leaky_relu,
+                    residual    = True),
                 scn.SubmanifoldConvolution(dimension=3,
                     nIn         = n_filters,
-                    nOut        = 16,
+                    nOut        = 1,
                     filter_size = 1,
                     bias        = False),
-                scn.SparseToDense(dimension=3, nPlanes=16),
+                scn.SparseToDense(dimension=3, nPlanes=n_filters),
                 torch.nn.Flatten(),
-                torch.nn.Linear(640, 3),
+                torch.nn.Linear(linear_size, 3),
                 torch.nn.Sigmoid()
             )
         else:
@@ -279,20 +295,15 @@ class ResNet(torch.nn.Module):
 
     def forward(self, x):
 
-        torch.cuda.synchronize()
         batch_size = x[2]
-
         x = self.input_tensor(x)
 
         x = self.initial_convolution(x)
-
-
 
         for i in range(len(self.convolutional_layers)):
             x = self.convolutional_layers[i](x)
 
         # Apply the final steps to get the right output shape
-
 
 
         output = {}
@@ -311,9 +322,8 @@ class ResNet(torch.nn.Module):
             output[key] = torch.squeeze(nn.AvgPool3d(kernel_size, ceil_mode=False)(output[key]))
             output[key] = output[key].view([batch_size, output[key].shape[-1]])
 
-
         if self.detect_vertex:
-            vertex = self.vertex_layer(x)
+            vertex = torch.squeeze(self.vertex_layer(x))
 
             return output, vertex
         else:

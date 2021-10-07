@@ -102,11 +102,17 @@ class larcv_fetcher(object):
             MaxBoxes  = 2,
             )
 
+        cb.add_batch_filler(
+            datatype  = "particle",
+            producer  = "neutrino",
+            name      = "particle"
+        )
+
 
         # Add the label configs:
         for label_name, l in zip(['neut', 'prot', 'cpi', 'npi'], [3, 3, 2, 2]):
             cb.add_batch_filler(
-                datatype     = "particle",
+                datatype     = "PID",
                 producer     = f"{label_name}ID",
                 name         = f'label_{label_name}',
                 PdgClassList = [i for i in range(l)]
@@ -130,6 +136,7 @@ class larcv_fetcher(object):
                 self.keyword_label.append(key)
 
         data_keys.update({"vertex" : name+"bbox"})
+        data_keys.update({"particle" : "particle"})
 
 
 
@@ -137,7 +144,7 @@ class larcv_fetcher(object):
 
         # TODO: READ THIS FROM IMAGE META:
         self.vertex_origin    = numpy.asarray([0.,-100.,0.])
-        self.image_dimensions = numpy.asarray([360., 200., 500.])
+        self.image_dimensions = numpy.asarray([360., 200., 500.], dtype="float32")
 
 
 
@@ -186,6 +193,8 @@ class larcv_fetcher(object):
         minibatch_dims = self._larcv_interface.fetch_minibatch_dims(name)
 
 
+
+
         # This brings up the next data to current data
         if pop:
             # print(f"Preparing next {name}")
@@ -207,10 +216,13 @@ class larcv_fetcher(object):
         # Parse out the vertex info:
         minibatch_data['vertex'] = minibatch_data['vertex'][:,:,0,0:3]
 
+
         # Also, we map the vertex from 0 to 1 across the image.  The image size is
         # [360, 200, 500] and the origin is at [0, -100, 0]
-        minibatch_data['vertex'] += self.vertex_origin
-        minibatch_data['vertex'] /= self.image_dimensions
+        # minibatch_data['vertex'] -= self.vertex_origin
+        # minibatch_data['vertex'] /= self.image_dimensions
+
+        minibatch_data['vertex'] = numpy.squeeze(minibatch_data['vertex'] )
 
 
         # Here, do some massaging to convert the input data to another format, if necessary:

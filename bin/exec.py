@@ -1,6 +1,7 @@
 
 #!/usr/bin/env python
 import os,sys,signal
+
 import time
 import pathlib
 import logging
@@ -50,6 +51,11 @@ class SparseEventID(object):
         if not self.args.run.distributed:
             return 0
         else:
+            if 'OMPI_COMM_WORLD_LOCAL_RANK' in os.environ:
+                max_gpus = 8
+                target_gpu = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK']) % max_gpus
+                os.environ['CUDA_VISIBLE_DEVICES'] = str(target_gpu)
+
             from mpi4py import MPI
             comm = MPI.COMM_WORLD
             return comm.Get_rank()
@@ -219,6 +225,7 @@ class SparseEventID(object):
 
 @hydra.main(config_path="../src/config", config_name="config")
 def main(cfg : OmegaConf) -> None:
+
 
     s = SparseEventID(cfg)
 

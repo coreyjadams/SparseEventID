@@ -36,6 +36,7 @@ class Train(Mode):
 class Inference(Mode):
     start_index: int = 0
 
+
 cs = ConfigStore.instance()
 cs.store(group="mode", name="train", node=Train)
 cs.store(group="mode", name="inference", node=Inference)

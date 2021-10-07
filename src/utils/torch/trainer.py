@@ -100,10 +100,6 @@ class trainer(trainercore):
         if self.args.mode.name == "train":
             self._net.train(True)
 
-        if self.args.run.compute_mode == "CPU":
-            pass
-        if self.args.run.compute_mode == "GPU":
-            self._net.cuda()
 
     def initialize(self, io_only=False):
 
@@ -113,36 +109,33 @@ class trainer(trainercore):
         if io_only:
             return
 
+        with self.default_device_context():
 
-        self.init_network()
 
-        n_trainable_parameters = 0
-        for var in self._net.parameters():
-            n_trainable_parameters += numpy.prod(var.shape)
-        logger.info("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
+            self.init_network()
 
-        self.init_optimizer()
+            self._net.to(self.default_device())
 
-        self.init_saver()
+            n_trainable_parameters = 0
+            for var in self._net.parameters():
+                n_trainable_parameters += numpy.prod(var.shape)
+            logger.info("Total number of trainable parameters in this network: {}".format(n_trainable_parameters))
 
-        self.restore_model()
+            self.init_optimizer()
+
+            self.init_saver()
+
+            self.restore_model()
 
 
         self._log_keys = ['loss']
         for key in self.larcv_fetcher.keyword_label:
             self._log_keys.append('acc/{}'.format(key))
 
-
-    def get_device(self):
-        # Convert the input data to torch tensors
-        if self.args.run.compute_mode == "GPU":
-            device = torch.device('cuda')
-            # logger.info(device)
-        else:
-            device = torch.device('cpu')
-
-
-        return device
+        if 'detect_vertex' in self.args.network and self.args.network['detect_vertex']:
+            self._log_keys.append("acc/Vertex")
+            self.image_dimensions = self.larcv_fetcher.image_dimensions
+            self.image_dimensions = torch.tensor(self.image_dimensions, device=self.default_device())
 
     def init_optimizer(self):
 
@@ -159,7 +152,7 @@ class trainer(trainercore):
 
 
 
-        device = self.get_device()
+        device = self.default_device()
 
         # These are the raw category occurences
         self._label_weights = {
@@ -204,9 +197,15 @@ class trainer(trainercore):
 
         target = torch.squeeze(minibatch_data['vertex'])
 
-        vertex_loss = 10*torch.nn.functional.mse_loss(target, vertex)
+        # The vertex prediction comes out between 0 and 1
+        # for each dimension.  Map it to the real coordinates:
+        vertex = vertex * self.image_dimensions
+
+
+        vertex_loss = torch.nn.functional.mse_loss(target, vertex)
         # exit()
-        return vertex_loss
+
+        return 0.001*vertex_loss
 
     def _calculate_accuracy(self, logits, minibatch_data):
         ''' Calculate the accuracy.
@@ -216,22 +215,18 @@ class trainer(trainercore):
 
         with torch.no_grad():
 
-            if self.args.network.detect_vertex:
+            if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
                 # Split things up again
                 logits, vertex = logits
                 # First, compute the difference between target and real in
                 # normalized units:
+                acc_temp = (minibatch_data['vertex'] - vertex*self.image_dimensions)
 
-                acc_temp = (minibatch_data['vertex'] - vertex).cpu()
-
-                # Map this relative accuracy to the detector size:
-                acc_temp *= self.larcv_fetcher.image_dimensions
-
-                accuracy['acc/Vx'] = torch.mean(torch.abs(acc_temp[:,0]))
-                accuracy['acc/Vy'] = torch.mean(torch.abs(acc_temp[:,1]))
-                accuracy['acc/Vz'] = torch.mean(torch.abs(acc_temp[:,2]))
+                accuracy['Vx'] = torch.mean(torch.abs(acc_temp[:,0]))
+                accuracy['Vy'] = torch.mean(torch.abs(acc_temp[:,1]))
+                accuracy['Vz'] = torch.mean(torch.abs(acc_temp[:,2]))
                 abs_acc = torch.sqrt(torch.sum(acc_temp**2, axis=-1))
-                accuracy['acc/Vertex'] = torch.mean(abs_acc)
+                accuracy['Vertex'] = torch.mean(abs_acc)
 
             # Compare how often the input label and the output prediction agree:
             for key in logits:
@@ -275,43 +270,64 @@ class trainer(trainercore):
     def on_epoch_end(self):
         pass
 
+
+    def default_device_context(self):
+
+        if self.args.run.compute_mode == "GPU":
+            return torch.cuda.device(0)
+        elif self.args.run.compute_mode == "XPU":
+            return contextlib.nullcontext
+            # device = torch.device("xpu")
+        elif self.args.run.compute_mode == "DPCPP":
+            return contextlib.nullcontext
+            # device = torch.device("dpcpp")
+        else:
+            return contextlib.nullcontext
+            # device = torch.device('cpu')
+
+    def default_device(self):
+
+        if self.args.run.compute_mode == "GPU":
+            return torch.device("cuda")
+        elif self.args.run.compute_mode == "XPU":
+            device = torch.device("xpu")
+        elif self.args.run.compute_mode == "DPCPP":
+            device = torch.device("dpcpp")
+        else:
+            device = torch.device('cpu')
+
+
     def to_torch(self, minibatch_data, device=None):
 
-        # Convert the input data to torch tensors
-        if self.args.run.compute_mode == "GPU":
-            if device is None:
-                device = torch.device('cuda')
+        with self.default_device_context():
 
-        else:
-            if device is None:
-                device = torch.device('cpu')
+            device = self.default_device()
 
 
-
-        for key in minibatch_data:
-            if key == 'entries' or key =='event_ids':
-                continue
-            if key == 'image' and self.args.network.data_format == 'sparse':
-                if self.args.dataset.dimension == 3:
-                    minibatch_data['image'] = (
-                            torch.tensor(minibatch_data['image'][0]).long(),
-                            torch.tensor(minibatch_data['image'][1], device=device),
-                            minibatch_data['image'][2],
-                        )
+            for key in minibatch_data:
+                if key == 'entries' or key =='event_ids' or key == 'particle':
+                    continue
+                if key == 'image' and self.args.network.data_format == 'sparse':
+                    if self.args.dataset.dimension == 3:
+                        minibatch_data['image'] = (
+                                torch.tensor(minibatch_data['image'][0]).long(),
+                                torch.tensor(minibatch_data['image'][1], device=device),
+                                minibatch_data['image'][2],
+                            )
+                    else:
+                        minibatch_data['image'] = (
+                                torch.tensor(minibatch_data['image'][0]).long(),
+                                torch.tensor(minibatch_data['image'][1], device=device),
+                                minibatch_data['image'][2],
+                            )
+                elif key == 'image' and self.args.network.data_format == 'graph':
+                    if self.args.dataset.dimension == 2:
+                        minibatch_data[key] = [ torch.tensor(m, device=device) for m in minibatch_data[key]]
+                    else:
+                        # This is repetitive from below, but might need to be adjusted eventually.
+                        minibatch_data[key] = torch.tensor(minibatch_data[key], device=device)
                 else:
-                    minibatch_data['image'] = (
-                            torch.tensor(minibatch_data['image'][0]).long(),
-                            torch.tensor(minibatch_data['image'][1], device=device),
-                            minibatch_data['image'][2],
-                        )
-            elif key == 'image' and self.args.network.data_format == 'graph':
-                if self.args.dataset.dimension == 2:
-                    minibatch_data[key] = [ torch.tensor(m, device=device) for m in minibatch_data[key]]
-                else:
-                    # This is repetitive from below, but might need to be adjusted eventually.
-                    minibatch_data[key] = torch.tensor(minibatch_data[key], device=device)
-            else:
-                minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
+                    minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
 
         return minibatch_data
 
@@ -335,7 +351,6 @@ class trainer(trainercore):
 
         # HPC Profiling with Torch Profiler
         if self.args.run.profile:
-            print("Setting up profiler")
             if not self.args.run.distributed or self._rank == 0:
                 # torch_prof = profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True)
                 # this is actually the older autograd profiler
@@ -374,24 +389,23 @@ class trainer(trainercore):
                 with record_function("backwards_pass"):
                     # Compute the loss based on the logits
                     loss = self._calculate_loss(minibatch_data, logits)
-                    print(loss)
                     if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
                         vtx_loss = self._calculate_loss_vertex(minibatch_data, vertex)
                         loss += vtx_loss
-                        torch.cuda.synchronize()
 
                 # Compute the gradients for the network parameters:
                 if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
                     self.scaler.scale(loss).backward()
                 else:
                     loss.backward()
-                first_param = next(self._net.parameters())
+
 
 
                 # Compute any necessary metrics:
                 if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
                     interior_metrics = self._compute_metrics((logits, vertex), minibatch_data, loss)
                     interior_metrics['loss/vertex'] = vtx_loss
+                    interior_metrics['loss/classification'] = loss - vtx_loss
                 else:
                     interior_metrics = self._compute_metrics(logits, minibatch_data, loss)
 
@@ -414,7 +428,6 @@ class trainer(trainercore):
             metrics['images_per_second'] = 0.0
 
         metrics['io_fetch_time'] = io_fetch_time / grad_accum
-
 
         step_start_time = datetime.datetime.now()
         # Apply the parameter update:
@@ -461,11 +474,7 @@ class trainer(trainercore):
         # Second, validation can not occur without a validation dataloader.
         if self._val_data_size is None: return
 
-        # perform a validation step
-        # Validation steps can optionally accumulate over several minibatches, to
-        # fit onto a gpu or other accelerator
-
-        # self._net.eval()
+        self._net.eval()
 
         with torch.no_grad():
 
@@ -481,10 +490,6 @@ class trainer(trainercore):
                 # Run a forward pass of the model on the input image:
                 logits = self._net(minibatch_data['image'])
 
-                # # Here, we have to map the logit keys to aux keys
-                # for key in logits.keys():
-                #     new_key = 'aux_' + key
-                #     logits[new_key] = logits.pop(key)
 
                 if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
                     logits, vertex = logits
@@ -499,12 +504,12 @@ class trainer(trainercore):
                     loss += vtx_loss
                     # Compute the metrics for this iteration:
                     metrics = self._compute_metrics((logits, vertex), minibatch_data, loss)
+                    metrics['loss/vertex'] = vtx_loss
+                    metrics['loss/classification'] = loss - vtx_loss
                 else:
                     metrics = self._compute_metrics(logits, minibatch_data, loss)
 
 
-                if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
-                    metrics['loss/vertex'] = vtx_loss
 
                 self.log(metrics, kind="val")
                 self.summary(metrics, kind="val")
@@ -560,19 +565,34 @@ class trainer(trainercore):
 
     def restore_state(self, state):
 
+
+
+        new_state_dict = {}
+        for key in state['state_dict']:
+            if key.startswith("module."):
+                new_key = key.lstrip("module.")
+            else:
+                new_key = key
+            new_state_dict[new_key] = state['state_dict'][key]
+
+        state['state_dict'] = new_state_dict
+
         self._net.load_state_dict(state['state_dict'])
+
         if self.args.mode.name == "train":
             self._opt.load_state_dict(state['optimizer'])
             self.lr_scheduler.load_state_dict(state['scheduler'])
 
         self._global_step = state['global_step']
 
+        device = self.default_device()
+
         # If using GPUs, move the model to GPU:
         if self.args.run.compute_mode == "GPU" and self.args.mode.name == "train":
             for state in self._opt.state.values():
                 for k, v in state.items():
                     if torch.is_tensor(v):
-                        state[k] = v.cuda()
+                        state[k] = v.to(device)
 
         return True
 
@@ -651,11 +671,13 @@ class trainer(trainercore):
 
     def batch_process(self):
 
+
         # If we're not training, force the number of iterations to the epoch size or less
         if self.args.mode.name != "train":
             if self.args.run.iterations > int(self._train_data_size/self.args.minibatch_size) + 1:
                 self.args.run.iterations = int(self._train_data_size/self.args.minibatch_size) + 1
                 logger.info(f'Number of iterations set to {self.args.run.iterations}')
+
 
         start = time.time()
         # Run iterations
