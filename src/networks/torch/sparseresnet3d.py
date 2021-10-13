@@ -264,14 +264,13 @@ class ResNet(torch.nn.Module):
 
         if 'detect_vertex' in args.network and args.network.detect_vertex:
             downsample = 2**args.network.network_depth
-            final_spatial_size = (i / downsample for i in initial_spatial_size)
-            linear_size = n_filters
-            for i in final_spatial_size:
-                linear_size *= i
-            linear_size = int(linear_size)
+            final_spatial_size = [i / downsample for i in initial_spatial_size]
+
+            self.anchor_spatial_size=torch.Tensor(final_spatial_size)
             self.detect_vertex=True
             # How many dense planes?  in 3D yolo we need a classification
             # score (vertex or not) + regression layer x 3D = 4
+            n_anchor_filters = 4
             self.vertex_layer = torch.nn.Sequential(
                 SparseBlockSeries(
                     inplanes    = n_filters,
@@ -281,17 +280,16 @@ class ResNet(torch.nn.Module):
                     residual    = True),
                 scn.SubmanifoldConvolution(dimension=3,
                     nIn         = n_filters,
-                    nOut        = 1,
+                    nOut        = n_anchor_filters,
                     filter_size = 1,
                     bias        = False),
-                scn.SparseToDense(dimension=3, nPlanes=n_filters),
-                torch.nn.Flatten(),
-                torch.nn.Linear(linear_size, 3),
-                torch.nn.Sigmoid()
+                scn.SparseToDense(dimension=3, nPlanes=n_anchor_filters),
             )
         else:
             self.detect_vertex = False
 
+    def vertex_shape(self):
+        return self.anchor_spatial_size
 
     def forward(self, x):
 
@@ -324,7 +322,6 @@ class ResNet(torch.nn.Module):
 
         if self.detect_vertex:
             vertex = torch.squeeze(self.vertex_layer(x))
-
             return output, vertex
         else:
             return output

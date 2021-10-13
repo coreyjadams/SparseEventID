@@ -6,3 +6,4 @@ network_depth: 8
 batch_norm: True
 leaky_relu: False
 depth_pre_merge: 4 # Only applies in the 2D case!!!
+detect_vertex: True

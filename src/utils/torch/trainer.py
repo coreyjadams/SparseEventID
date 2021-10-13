@@ -127,15 +127,22 @@ class trainer(trainercore):
 
             self.restore_model()
 
+            from src.networks.torch import LossCalculator
+            vertex_shape = self._net.vertex_shape()
+            if vertex_shape is not None:
+                vertex_shape = vertex_shape.to(self.default_device())
+            self.loss_calculator = LossCalculator.LossCalculator(vertex_shape)
+
 
         self._log_keys = ['loss']
         for key in self.larcv_fetcher.keyword_label:
             self._log_keys.append('acc/{}'.format(key))
 
-        if 'detect_vertex' in self.args.network and self.args.network['detect_vertex']:
+        if self.args.network['detect_vertex']:
             self._log_keys.append("acc/Vertex")
-            self.image_dimensions = self.larcv_fetcher.image_dimensions
-            self.image_dimensions = torch.tensor(self.image_dimensions, device=self.default_device())
+            self.image_dimensions = torch.tensor(self.larcv_fetcher.image_dimensions, device=self.default_device())
+            self.vertex_origin = torch.tensor(self.larcv_fetcher.vertex_origin, device=self.default_device())
+            self.loss_calculator.set_image_dimensions(self.image_dimensions, self.vertex_origin)
 
     def init_optimizer(self):
 
@@ -154,58 +161,9 @@ class trainer(trainercore):
 
         device = self.default_device()
 
-        # These are the raw category occurences
-        self._label_weights = {
-            'label_cpi'  : torch.tensor([50932., 61269.], device=device),
-            'label_prot' : torch.tensor([36583., 46790., 28828.], device=device),
-            'label_npi'  : torch.tensor([70572., 41629.], device=device),
-            'label_neut' : torch.tensor([39452., 39094., 33655.], device=device)
-        }
-        #
-        self._criterion = torch.nn.CrossEntropyLoss()
-
-
-    def _calculate_loss(self, inputs, logits):
-        ''' Calculate the loss.
-
-        returns a single scalar for the optimizer to use.
-        '''
-
-        self.num_classes = {
-            'label_cpi' : 2,
-            'label_prot' : 3,
-            'label_npi' : 2,
-            'label_neut' : 3,
-        }
 
 
 
-        loss = None
-        for key in logits:
-            values, target = torch.max(inputs[key], dim=1)
-            temp_loss = self._criterion(logits[key], target = target)
-
-            if loss is None:
-                loss = temp_loss
-            else:
-                loss += temp_loss
-
-        return loss
-
-    def _calculate_loss_vertex(self, minibatch_data, vertex):
-        '''MSE vertex loss: x/y/z distance'''
-
-        target = torch.squeeze(minibatch_data['vertex'])
-
-        # The vertex prediction comes out between 0 and 1
-        # for each dimension.  Map it to the real coordinates:
-        vertex = vertex * self.image_dimensions
-
-
-        vertex_loss = torch.nn.functional.mse_loss(target, vertex)
-        # exit()
-
-        return 0.001*vertex_loss
 
     def _calculate_accuracy(self, logits, minibatch_data):
         ''' Calculate the accuracy.
@@ -303,33 +261,57 @@ class trainer(trainercore):
 
             device = self.default_device()
 
-
-            for key in minibatch_data:
-                if key == 'entries' or key =='event_ids' or key == 'particle':
-                    continue
-                if key == 'image' and self.args.network.data_format == 'sparse':
-                    if self.args.dataset.dimension == 3:
-                        minibatch_data['image'] = (
-                                torch.tensor(minibatch_data['image'][0]).long(),
-                                torch.tensor(minibatch_data['image'][1], device=device),
-                                minibatch_data['image'][2],
-                            )
+            with torch.no_grad():
+                for key in minibatch_data:
+                    if key == 'entries' or key =='event_ids' or key == 'particle':
+                        continue
+                    if key == 'image' and self.args.network.data_format == 'sparse':
+                        if self.args.dataset.dimension == 3:
+                            minibatch_data['image'] = [
+                                    torch.tensor(minibatch_data['image'][0]).long(),
+                                    torch.tensor(minibatch_data['image'][1], device=device),
+                                    minibatch_data['image'][2],
+                                ]
+                        else:
+                            minibatch_data['image'] = [
+                                    torch.tensor(minibatch_data['image'][0]).long(),
+                                    torch.tensor(minibatch_data['image'][1], device=device),
+                                    minibatch_data['image'][2],
+                                ]
+                    elif key == 'image' and self.args.network.data_format == 'graph':
+                        if self.args.dataset.dimension == 2:
+                            minibatch_data[key] = [ torch.tensor(m, device=device) for m in minibatch_data[key]]
+                        else:
+                            # This is repetitive from below, but might need to be adjusted eventually.
+                            minibatch_data[key] = torch.tensor(minibatch_data[key], device=device)
                     else:
-                        minibatch_data['image'] = (
-                                torch.tensor(minibatch_data['image'][0]).long(),
-                                torch.tensor(minibatch_data['image'][1], device=device),
-                                minibatch_data['image'][2],
-                            )
-                elif key == 'image' and self.args.network.data_format == 'graph':
-                    if self.args.dataset.dimension == 2:
-                        minibatch_data[key] = [ torch.tensor(m, device=device) for m in minibatch_data[key]]
-                    else:
-                        # This is repetitive from below, but might need to be adjusted eventually.
-                        minibatch_data[key] = torch.tensor(minibatch_data[key], device=device)
-                else:
-                    minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
+                        minibatch_data[key] = torch.tensor(minibatch_data[key],device=device)
 
         return minibatch_data
+
+    def forward_pass(self, minibatch_data):
+        '''
+        Run the forward pass for all target objectives
+        '''
+
+
+        minibatch_data = self.to_torch(minibatch_data)
+
+        predictions={}
+
+        if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
+            with torch.cuda.amp.autocast():
+                logits = self._net(minibatch_data['image'])
+        else:
+            logits = self._net(minibatch_data['image'])
+
+        if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
+            logits, vertex = logits
+            predictions['vertex'] = vertex
+
+        predictions['logits'] = logits
+
+        return predictions
 
     def train_step(self):
 
@@ -349,71 +331,45 @@ class trainer(trainercore):
 
         grad_accum = self.args.mode.optimizer.gradient_accumulation
 
-        # HPC Profiling with Torch Profiler
-        if self.args.run.profile:
-            if not self.args.run.distributed or self._rank == 0:
-                # torch_prof = profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, profile_memory=True)
-                # this is actually the older autograd profiler
-                torch_prof = torch.autograd.profiler.profile(record_shapes=True, profile_memory=True, use_cuda=use_cuda)
+        for interior_batch in range(grad_accum):
+
+            # Fetch the next batch of data with larcv
+            io_start_time = datetime.datetime.now()
+            minibatch_data = self.larcv_fetcher.fetch_next_batch("primary",force_pop = True)
+            io_end_time = datetime.datetime.now()
+            io_fetch_time = (io_end_time - io_start_time).total_seconds()
+
+            network_predictions = self.forward_pass(minibatch_data)
+
+            use_cuda=torch.cuda.is_available()
+
+            losses = self.loss_calculator(minibatch_data, network_predictions)
+
+            # # Compute the loss based on the logits
+            # loss = self._calculate_loss(minibatch_data, logits)
+            # if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
+            #     vtx_loss = self._calculate_loss_vertex(minibatch_data, vertex)
+            #     loss += vtx_loss
+
+            # Compute the gradients for the network parameters:
+            if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
+                self.scaler.scale(loss).backward()
             else:
-                torch_prof = dummycontext()
-        else:
-            torch_prof = dummycontext()
-
-        with torch_prof as prof:
-
-            for interior_batch in range(grad_accum):
-
-                # Fetch the next batch of data with larcv
-                io_start_time = datetime.datetime.now()
-                minibatch_data = self.larcv_fetcher.fetch_next_batch("primary",force_pop = True)
-                io_end_time = datetime.datetime.now()
-                io_fetch_time = (io_end_time - io_start_time).total_seconds()
-
-                minibatch_data = self.to_torch(minibatch_data)
-
-                use_cuda=torch.cuda.is_available()
+                loss.backward()
 
 
-                with record_function("model_training"):
-                    # if mixed precision, and cuda, use autocast:
-                    if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
-                        with torch.cuda.amp.autocast():
-                            logits = self._net(minibatch_data['image'])
-                    else:
-                        logits = self._net(minibatch_data['image'])
 
-                if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
-                    logits, vertex = logits
+            # Compute any necessary metrics:
+            # if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
+                # interior_metrics['loss/vertex'] = vtx_loss
+                # interior_metrics['loss/classification'] = loss - vtx_loss
+            interior_metrics = self._compute_metrics(logits, minibatch_data, loss)
 
-                with record_function("backwards_pass"):
-                    # Compute the loss based on the logits
-                    loss = self._calculate_loss(minibatch_data, logits)
-                    if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
-                        vtx_loss = self._calculate_loss_vertex(minibatch_data, vertex)
-                        loss += vtx_loss
-
-                # Compute the gradients for the network parameters:
-                if self.args.run.precision == "mixed" and self.args.run.compute_mode == "GPU":
-                    self.scaler.scale(loss).backward()
+            for key in interior_metrics:
+                if key in metrics:
+                    metrics[key] += interior_metrics[key]
                 else:
-                    loss.backward()
-
-
-
-                # Compute any necessary metrics:
-                if 'detect_vertex' in self.args.network and self.args.network.detect_vertex:
-                    interior_metrics = self._compute_metrics((logits, vertex), minibatch_data, loss)
-                    interior_metrics['loss/vertex'] = vtx_loss
-                    interior_metrics['loss/classification'] = loss - vtx_loss
-                else:
-                    interior_metrics = self._compute_metrics(logits, minibatch_data, loss)
-
-                for key in interior_metrics:
-                    if key in metrics:
-                        metrics[key] += interior_metrics[key]
-                    else:
-                        metrics[key] = interior_metrics[key]
+                    metrics[key] = interior_metrics[key]
 
         # Here, make sure to normalize the interior metrics:
         for key in metrics:

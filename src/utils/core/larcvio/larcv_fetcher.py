@@ -136,14 +136,14 @@ class larcv_fetcher(object):
                 self.keyword_label.append(key)
 
         data_keys.update({"vertex" : name+"bbox"})
-        data_keys.update({"particle" : "particle"})
+        # data_keys.update({"particle" : "particle"})
 
 
 
         self._larcv_interface.prepare_manager(name, io_config, batch_size, data_keys, color=color)
 
         # TODO: READ THIS FROM IMAGE META:
-        self.vertex_origin    = numpy.asarray([0.,-100.,0.])
+        self.vertex_origin    = numpy.asarray([0.,-100.,0.], dtype="float32")
         self.image_dimensions = numpy.asarray([360., 200., 500.], dtype="float32")
 
 
@@ -215,6 +215,11 @@ class larcv_fetcher(object):
 
         # Parse out the vertex info:
         minibatch_data['vertex'] = minibatch_data['vertex'][:,:,0,0:3]
+        minibatch_data['vertex'] = numpy.squeeze(minibatch_data['vertex'] )
+
+        if self.input_dimension == 2:
+            # Project the vertex to 2D:
+            minibatch_data['vertex'] = self.project_vertex(minibatch_data['vertex'])
 
 
         # Also, we map the vertex from 0 to 1 across the image.  The image size is
@@ -222,7 +227,6 @@ class larcv_fetcher(object):
         # minibatch_data['vertex'] -= self.vertex_origin
         # minibatch_data['vertex'] /= self.image_dimensions
 
-        minibatch_data['vertex'] = numpy.squeeze(minibatch_data['vertex'] )
 
 
         # Here, do some massaging to convert the input data to another format, if necessary:
@@ -249,6 +253,27 @@ class larcv_fetcher(object):
             raise Exception("Image Mode not recognized")
 
         return minibatch_data
+
+
+    def project_vertex(self, vertex):
+
+        angle = 35.7
+        cos_theta = numpy.cos(numpy.deg2rad(angle))
+        sin_theta = numpy.sin(numpy.deg2rad(angle))
+
+        vx, vy, vz = vertex.split(axis=-1)
+
+        all_planes_y  = vx
+
+        plane_0_x = cos_theta*vz + sin_theta*vz
+        plane_1_x = cos_theta*vz - sin_theta*vz
+        plane_2_x = vz
+
+        return [
+            numpy.stack([plane_0_x, all_planes_y]),
+            numpy.stack([plane_1_x, all_planes_y]),
+            numpy.stack([plane_2_x, all_planes_y]),
+        ]
 
 
     def prepare_writer(self, input_file, output_file):
