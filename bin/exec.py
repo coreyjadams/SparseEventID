@@ -3,14 +3,17 @@
 import os,sys,signal
 import time
 import pathlib
-import logging
-from logging import handlers
 
-import numpy
 
 # For configuration:
 from omegaconf import DictConfig, OmegaConf
 import hydra
+
+from hydra.experimental import compose, initialize
+from hydra.core.hydra_config import HydraConfig
+from hydra.core.utils import configure_log
+
+hydra.output_subdir = None
 
 #############################
 
@@ -19,8 +22,15 @@ network_dir = os.path.dirname(os.path.abspath(__file__))
 network_dir = os.path.dirname(network_dir)
 sys.path.insert(0,network_dir)
 
+# from src.config import Config
+from src.config.mode import ModeKind
 
-import argparse
+from src.io import create_larcv_dataset
+
+from src import logging
+
+import atexit
+
 
 class SparseEventID(object):
 
@@ -28,22 +38,44 @@ class SparseEventID(object):
 
         self.args = config
 
+
         rank = self.init_mpi()
+
+        # Add to the output dir:
+        # self.args.output_dir += f"/{self.args.network.name}/"
+        self.args.output_dir += f"/{self.args.run.id}/"
 
         # Create the output directory if needed:
         if rank == 0:
-            outpath = pathlib.Path(self.args.run.output_dir)
+            outpath = pathlib.Path(self.args.output_dir)
             outpath.mkdir(exist_ok=True, parents=True)
 
         self.configure_logger(rank)
 
         self.validate_arguments()
 
-        if config.mode.name == "train":
-            self.train()
-        if config.mode.name == "iotest":
-            self.iotest()
+        # Print the command line args to the log file:
+        logger = logging.getLogger("SpEvID")
+        logger.info("Dumping launch arguments.")
+        logger.info(sys.argv)
+        logger.info(self.__str__())
 
+        logger.info("Configuring Datasets.")
+        self.datasets  = self.configure_datasets()
+        # self.datasets, self.transforms = self.configure_datasets()
+        logger.info("Data pipeline ready.")
+
+
+
+    def run(self):
+        if self.args.mode.name == ModeKind.train:
+            self.train()
+        if self.args.mode.name == ModeKind.iotest:
+            self.iotest()
+        if self.args.mode.name == ModeKind.inference:
+            self.inference()
+        if self.args.mode.name == ModeKind.visualize:
+            self.visualize()
 
 
     def init_mpi(self):
@@ -51,65 +83,149 @@ class SparseEventID(object):
             return 0
         else:
             from mpi4py import MPI
-            comm = MPI.COMM_WORLD
-            return comm.Get_rank()
+            self.args.run.world_size = MPI.COMM_WORLD.Get_size()
+            return MPI.COMM_WORLD.Get_rank()
 
+
+    def configure_lr_schedule(self, epoch_length, max_epochs):
+
+
+
+        if self.args.mode.optimizer.lr_schedule.name == "one_cycle":
+            from src.utils import OneCycle
+            schedule_args = self.args.mode.optimizer.lr_schedule
+            lr_schedule = OneCycle(
+                min_learning_rate  = 1e-5,
+                peak_learning_rate = schedule_args.peak_learning_rate,
+                decay_floor        = schedule_args.decay_floor, 
+                epoch_length       = epoch_length,
+                decay_epochs       = schedule_args.decay_epochs,
+                total_epochs       = max_epochs
+            )
+        elif self.args.mode.optimizer.lr_schedule.name == "standard":
+            from src.utils import WarmupFlatDecay
+            schedule_args = self.args.mode.optimizer.lr_schedule
+            lr_schedule = WarmupFlatDecay(
+                peak_learning_rate = schedule_args.peak_learning_rate,
+                decay_floor  = schedule_args.decay_floor,
+                epoch_length = epoch_length,
+                decay_epochs = schedule_args.decay_epochs,
+                total_epochs = max_epochs
+            )
+
+        return lr_schedule
+
+
+    def configure_datasets(self):
+        """
+        This function creates the non-framework iterable datasets used in this app.
+
+        They get converted to framework specific tools, if needed, in the
+        framework specific code.
+        """
+
+        from src.io import create_torch_larcv_dataloader
+
+        batch_keys = [self.args.data.image_key]
+        if self.args.data.transform1:
+            batch_keys.append(self.args.data.image_key + "_1")
+        if self.args.data.transform2:
+            batch_keys.append(self.args.data.image_key + "_2")
+        if self.args.name == "yolo":
+            batch_keys.append("vertex")
+            batch_keys.append("label")
+            batch_keys.append("energy")
+
+        elif self.args.name == "supervised_eventID":
+            batch_keys.append("label")
+        elif self.args.name == "unsupervised_eventID":
+            batch_keys.append("energy")
+            batch_keys.append("label")
+
+        ds = {}
+        for active in self.args.data.active:
+
+            f_name = getattr(self.args.data, active)
+            larcv_ds = create_larcv_dataset(self.args.data,
+                batch_size   = self.args.run.minibatch_size,
+                input_file   = f_name,
+                name         = active,
+                distributed  = self.args.run.distributed,
+                batch_keys   = batch_keys,
+                data_mode    = self.args.framework.mode,
+            )
+
+
+            ds.update({
+                active :  create_torch_larcv_dataloader(
+                    larcv_ds,
+                    self.args.run.minibatch_size,
+                    self.args.framework.mode,
+                )
+            })
+            # Get the image size:
+            spatial_size = larcv_ds.image_size(self.args.data.image_key)
+
+        return ds
+        #
 
     def configure_logger(self, rank):
 
-        logger = logging.getLogger()
-
-        # Create a handler for STDOUT, but only on the root rank.
-        # If not distributed, we still get 0 passed in here.
+        logger = logging.getLogger("SpEvID")
         if rank == 0:
-            stream_handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-            stream_handler.setFormatter(formatter)
-            handler = handlers.MemoryHandler(capacity = 0, target=stream_handler)
-            logger.addHandler(handler)
-
-            # Add a file handler too:
-            log_file = self.args.run.output_dir + "/process.log"
-            file_handler = logging.FileHandler(log_file)
-            file_handler.setFormatter(formatter)
-            file_handler = handlers.MemoryHandler(capacity=10, target=file_handler)
-            logger.addHandler(file_handler)
-
+            logger.setFile(self.args.output_dir + "/process.log")
             logger.setLevel(logging.INFO)
         else:
-            # in this case, MPI is available but it's not rank 0
-            # create a null handler
-            handler = logging.NullHandler()
-            logger.addHandler(handler)
-            logger.setLevel(logging.INFO)
+            logger.setLevel(999)
 
 
     def train(self):
 
-        logger = logging.getLogger()
+        logger = logging.getLogger("SpEvID")
 
         logger.info("Running Training")
         logger.info(self.__str__())
 
         self.make_trainer()
 
-        self.trainer.initialize()
-        self.trainer.batch_process()
+        from src.utils import create_trainer
 
+        trainer, model, checkpoint_path = create_trainer(self.args, self.trainer, self.datasets)
+
+        trainer.fit(
+            model,
+            train_dataloaders= self.datasets["train"],
+            val_dataloaders  = self.datasets["val"],
+            ckpt_path        = checkpoint_path
+        )
+
+    def inference(self):
+        logger = logging.getLogger("NEXT")
+
+
+        logger.info("Running Inference")
+
+        self.make_trainer()
+
+        from src.utils import create_trainer
+
+
+        trainer, model, checkpoint_path = create_trainer(self.args, self.trainer, self.datasets)
+
+        trainer.validate(
+            model,
+            dataloaders  = self.datasets["val"],
+            ckpt_path    = checkpoint_path
+        )
 
     def iotest(self):
 
-        logger = logging.getLogger()
+        logger = logging.getLogger("NEXT")
 
         logger.info("Running IO Test")
-        logger.info(self.__str__())
 
-        self.make_trainer()
-        # print("Initializing")
 
-        configured_keys = self.trainer.initialize(io_only=True)
-
-        # print("Initialized")
+        # self.trainer.initialize(io_only=True)
 
         if self.args.run.distributed:
             from mpi4py import MPI
@@ -117,56 +233,67 @@ class SparseEventID(object):
         else:
             rank = 0
 
-        # label_stats = numpy.zeros((36,))
-        global_start = time.time()
-        time.sleep(0.5)
-        # print("\n\n\n\nBegin Loop \n\n\n\n")
-        for i in range(self.args.run.iterations):
+
+
+        for key, dataset in self.datasets.items():
+            logger.info(f"Reading dataset {key}")
+            global_start = time.time()
+            total_reads = 0
+
+
+            # Determine the stopping point:
+            break_i = self.args.run.length * len(dataset)
+            break_i = 25
+
             start = time.time()
-            for key in configured_keys:
-                time.sleep(0.0)
-                # print(f"Fetching {key}")
-                mb = self.trainer.larcv_fetcher.fetch_next_batch(key, force_pop=True)
-                # print(f"Successfully got {key}")
-            end = time.time()
+            for i, minibatch in enumerate(dataset):
+                image = minibatch[self.args.data.image_key]
+                end = time.time()
+                if i >= break_i: break
+                logger.info(f"{i}: Time to fetch a minibatch of data: {end - start:.2f}s")
+                start = time.time()
+                total_reads += 1
 
-            logger.info(f"{i}: Time to fetch a minibatch of data: {end - start:.2f}s")
-
-        logger.info(f"Total IO Time: {time.time() - global_start:.2f}s")
-
+            total_time = time.time() - global_start
+            images_read = total_reads * self.args.run.minibatch_size
+            logger.info(f"{key} - Total IO Time: {total_time:.2f}s")
+            logger.info(f"{key} - Total images read per batch: {self.args.run.minibatch_size}")
+            logger.info(f"{key} - Average Image IO Throughput: { images_read / total_time:.3f}")
 
 
 
     def make_trainer(self):
 
-        if self.args.mode.name == "iotest":
-            from src.utils.core import trainercore
-
-            self.trainer = trainercore.trainercore(self.args)
-            return
-
-        if self.args.framework.name == "tensorflow":
-
-            # Import tensorflow and see what the version is.
-            import tensorflow as tf
-
-            if self.args.run.distributed:
-                from src.utils.tensorflow import distributed_trainer
-                self.trainer = distributed_trainer.distributed_trainer(self.args)
-            else:
-                from src.utils.tensorflow import trainer
-                self.trainer = trainer.trainer(self.args)
+        dataset_length = max([len(ds) for ds in self.datasets.values()])
 
 
-        elif self.args.framework.name == "torch":
-            if self.args.run.distributed:
-                from src.utils.torch import distributed_trainer
-                self.trainer = distributed_trainer.distributed_trainer(self.args)
-            else:
-                from src.utils.torch import trainer
-                self.trainer = trainer.trainer(self.args)
+        if self.args.mode.name == ModeKind.train:
+            lr_schedule = self.configure_lr_schedule(dataset_length, self.args.run.length)
+        else:
+            lr_schedule = None
+
+        if self.args.name == "simclr":
+            from src.utils.representation_learning import create_lightning_module
+
+        elif self.args.name == "yolo":
+            from src.utils.vertex_finding import create_lightning_module
+        elif self.args.name == "supervised_eventID":
+            from src.utils.supervised_eventID import create_lightning_module
+        elif self.args.name == "unsupervised_eventID":
+            from src.utils.unsupervised_eventID import create_lightning_module
 
 
+        transform_keys = []
+        if self.args.data.transform1:
+            transform_keys.append(self.args.data.image_key+"_1")
+        if self.args.data.transform2:
+             transform_keys.append(self.args.data.image_key+"_2")
+        self.trainer = create_lightning_module(
+            self.args,
+            self.datasets,
+            transform_keys,
+            lr_schedule,
+        )
 
 
     def dictionary_to_str(self, in_dict, indentation = 0):
@@ -204,28 +331,29 @@ class SparseEventID(object):
 
     def validate_arguments(self):
 
-
-        # if self.args.framework.name == "torch":
-        #     # In torch, only option is channels first:
-        #     if self.args.data.data_format == "channels_last":
-        #         print("Torch requires channels_first, switching automatically")
-        #         self.args.data.data_format = "channels_first"
-
         pass
 
 
 
+from src.config import config
 
-
-@hydra.main(config_path="../src/config", config_name="config")
+@hydra.main(version_base=None, config_path="../recipes", config_name="dune2d")
 def main(cfg : OmegaConf) -> None:
 
     s = SparseEventID(cfg)
+    atexit.register(s.exit)
 
+    s.run()
 
 if __name__ == '__main__':
     #  Is this good practice?  No.  But hydra doesn't give a great alternative
     import sys
     if "--help" not in sys.argv and "--hydra-help" not in sys.argv:
-        sys.argv += ['hydra.run.dir=.', 'hydra/job_logging=disabled']
+        sys.argv += [
+            'hydra/job_logging=disabled',
+            'hydra.output_subdir=null',
+            'hydra.job.chdir=False',
+            'hydra.run.dir=.',
+            'hydra/hydra_logging=disabled',
+        ]
     main()

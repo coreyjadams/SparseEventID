@@ -1,10 +1,11 @@
 from enum import Enum
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hydra.core.config_store import ConfigStore
 from omegaconf import MISSING
+from typing import List, Any
 
-from .network   import Network
+from .network   import Repr, MLP
 from .mode      import Mode
 from .framework import Framework
 from .data      import Data
@@ -23,10 +24,10 @@ class Precision(Enum):
 @dataclass
 class Run:
     distributed:        bool        = True
-    compute_mode:       ComputeMode = ComputeMode.GPU
-    length:             int         = MISSING
+    compute_mode:       ComputeMode = ComputeMode.CUDA
+    length:             int         = 1
     minibatch_size:     int         = MISSING
-    id:                 int         = MISSING
+    id:                 Any         = MISSING
     precision:          Precision   = Precision.float32
     profile:            bool        = False
     world_size:         int         = 1
@@ -47,38 +48,38 @@ cs.store(
 defaults = [
     {"run"       : "base_run"},
     {"mode"      : "train"},
-    {"data"      : "mc_tl208"},
+    {"dataset"   : "dune2d"},
     {"framework" : "lightning"},
     {"encoder"   : "convnet"}
 ]
 
-@dataclass
-class LearnRepresentation:
-    defaults: List[Any] = field(default_factory=lambda: defaults)
+# @dataclass
+# class LearnRepresentation:
+#     defaults: List[Any] = field(default_factory=lambda: defaults)
 
 
-    run:        Run       = MISSING
-    mode:       Mode      = MISSING
-    data:       Data      = MISSING
-    framework:  Framework = MISSING
-    encoder:    Representation = MISSING
-    head:       ClassificationHead = field(default_factory= lambda : ClassificationHead())
-    output_dir: str       = "output/"
-    name:       str       = "simclr"
+#     run:        Run       = MISSING
+#     mode:       Mode      = MISSING
+#     data:       Data      = MISSING
+#     framework:  Framework = MISSING
+#     encoder:    Representation = MISSING
+#     head:       ClassificationHead = field(default_factory= lambda : ClassificationHead())
+#     output_dir: str       = "output/"
+#     name:       str       = "simclr"
 
-@dataclass
-class DetectVertex:
-    defaults: List[Any] = field(default_factory=lambda: defaults)
+# @dataclass
+# class DetectVertex:
+#     defaults: List[Any] = field(default_factory=lambda: defaults)
 
 
-    run:        Run       = MISSING
-    mode:       Mode      = MISSING
-    data:       Data      = MISSING
-    framework:  Framework = MISSING
-    encoder:    Representation = MISSING
-    head:       YoloHead  = field(default_factory= lambda : YoloHead())
-    output_dir: str       = "output/"
-    name:       str       = "yolo"
+#     run:        Run       = MISSING
+#     mode:       Mode      = MISSING
+#     data:       Data      = MISSING
+#     framework:  Framework = MISSING
+#     encoder:    Representation = MISSING
+#     head:       YoloHead  = field(default_factory= lambda : YoloHead())
+#     output_dir: str       = "output/"
+#     name:       str       = "yolo"
 
 
 
@@ -89,25 +90,26 @@ class SupervisedClassification:
 
     run:        Run       = MISSING
     mode:       Mode      = MISSING
-    data:       Data      = MISSING
+    dataset:    Data      = MISSING
     framework:  Framework = MISSING
-    encoder:    Representation = MISSING
-    head:       ClassificationHead = field(default_factory= lambda : ClassificationHead())
+    encoder:    Repr      = MISSING
+    head:       MLP       = field(default_factory= lambda : MLP())
     output_dir: str       = "output/"
     name:       str       = "supervised_eventID"
 
-@dataclass
-class Config:
-    defaults: List = field(
-        default_factory=lambda: [
-            {"hydra/job_logging": "disable_hydra_logging"},
-        ]
-    )
-    network:    network.Network     = MISSING
-    framework:  framework.Framework = MISSING
-    dataset:    dataset.Dataset     = MISSING
+# @dataclass
+# class Config:
+#     defaults: List = field(
+#         default_factory=lambda: [
+#             {"hydra/job_logging": "disable_hydra_logging"},
+#         ]
+#     )
+#     network:    network.Network     = MISSING
+#     framework:  framework.Framework = MISSING
+#     dataset:    dataset.Dataset     = MISSING
 
 
-cs.store(name="representation",            node=LearnRepresentation)
+# cs.store(name="config",                    node=Config)
+# cs.store(name="representation",            node=LearnRepresentation)
 cs.store(name="supervised_classification", node=SupervisedClassification)
-cs.store(name="detect_vertex",             node=DetectVertex)
+# cs.store(name="detect_vertex",             node=DetectVertex)

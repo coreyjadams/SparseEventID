@@ -1,0 +1,9 @@
+defaults:
+  - _self_
+  - supervised_classification
+
+
+data:
+  active:
+   - train
+   - val
