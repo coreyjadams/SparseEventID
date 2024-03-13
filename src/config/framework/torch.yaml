@@ -1,2 +1,0 @@
-name: torch
-distributed_mode: DDP

@@ -11,8 +11,28 @@ class LabelType(Enum):
 
 
 class RandomAccessMode(enum):
-    serial_access  = 0
-    random_blocks  = 1
+    serial_access = 0
+    random_blocks = 1
+    random_events = 2
+
+@dataclass
+class Data:
+    name:        str = ""
+    label:      bool = True
+    vertex:     bool = False
+    mode: RandomMode = RandomMode.random_events
+    seed:        int = -1
+    train:       str = ""
+    test:        str = ""
+    val:         str = ""
+    image_key:   str = ""
+    active: Tuple[str] = field(default_factory=list)
+    normalize:  bool = True 
+    transform1: bool = False
+    transform2: bool = False
+    dimension:   int = 3
+    images       int = 1
+
 
 
 @dataclass
