@@ -52,23 +52,27 @@ class Data:
 #     test_file:      str        = ""
 #     val_file:       str        = ""
 
+dune_data_dir = "/data/datasets/DUNE/pixsim_small/"
+
 @dataclass
 class dune2d(Data):
-    train:          str        = "/data/datasets/DUNE/pixsim_small/train.h5"
-    test:           str        = "/data/datasets/DUNE/pixsim_small/test.h5"
-    val:            str        = "/data/datasets/DUNE/pixsim_small/test.h5"
+    train:          str        = dune_data_dir + "train.h5"
+    test:           str        = dune_data_dir + "test.h5"
+    val:            str        = dune_data_dir + "test.h5"
     dimension:      int        = 2
     images:         int        = 3
     image_key:      str        = "dunevoxels"
     detector:       Detector   = Detector.dune2d
 
-# @dataclass
-# class dune3d(Dataset):
-#     data_directory: str        = MISSING
-#     file:           str        = "test.h5"
-#     aux_file:       str        = "test.h5"
-#     dimension:      int        = 3
-#     detector:       Detector   = Detector.dune3d
+@dataclass
+class dune3d(Data):
+    train:          str        = dune_data_dir + "train.h5"
+    test:           str        = dune_data_dir + "test.h5"
+    val:            str        = dune_data_dir + "test.h5"
+    dimension:      int        = 3
+    images:         int        = 1
+    image_key:      str        = "dunevoxels"
+    detector:       Detector   = Detector.dune3d
     
 
 # @dataclass
@@ -81,5 +85,5 @@ class dune2d(Data):
 
 cs = ConfigStore.instance()
 cs.store(group="data", name="dune2d",   node=dune2d)
-# cs.store(group="dataset", name="dune3d",   node=dune3d)
+cs.store(group="data", name="dune3d",   node=dune3d)
 # cs.store(group="dataset", name="next_new", node=next_new)

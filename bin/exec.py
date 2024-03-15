@@ -42,7 +42,7 @@ class SparseEventID(object):
         rank = self.init_mpi()
 
         # Add to the output dir:
-        # self.args.output_dir += f"/{self.args.network.name}/"
+        self.args.output_dir += f"/{self.args.data.detector.name}/"
         self.args.output_dir += f"/{self.args.run.id}/"
 
         # Create the output directory if needed:

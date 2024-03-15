@@ -36,8 +36,8 @@ def meta(detector):
     elif detector == Detector.dune3d:
         return numpy.array(
             (
-                [[900,  500, 1250],], # n_voxels, (n_images,3 )
-                [[360., 200., 500],], # image size (n_images, 3)
+                [[1024,  512,   1280],], # n_voxels, (n_images,3 )
+                [[409.6, 204.8, 516 ],], # image size (n_images, 3)
                 [[0.0, -100, 0.0],], # Origin
             ),
             dtype = [
@@ -46,6 +46,14 @@ def meta(detector):
                 ('origin', "float32", (1,3)),
             ]
         )     
+        # These are the "real" values which I pad to make things easier.
+        # Padding is going right off the end of existing dimensions
+        # (
+        #     [[900,  500, 1250],], # n_voxels, (n_images,3 )
+        #     [[360., 200., 500],], # image size (n_images, 3)
+        #     [[0.0, -100, 0.0],], # Origin
+        # ),
+        # Voxel size (units/voxel) = [0.4, 0.4, 0.4]
 
 
 def create_larcv_interface(random_access_mode, distributed, seed):

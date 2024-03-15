@@ -41,7 +41,8 @@ def build_networks(params, input_shape, output_shape):
 
     current_number_of_filters = encoder.output_shape[0]
     spatial_shape = encoder.output_shape[1:]
-    
+    print(spatial_shape)
+    print(current_number_of_filters)
     # First step of the classification head is to pool the spatial size:
 
 

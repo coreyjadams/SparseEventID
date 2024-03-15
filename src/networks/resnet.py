@@ -14,8 +14,6 @@ class Encoder(torch.nn.Module):
         super().__init__()
 
         dimension = params.data.dimension
-        print(image_size)
-        print(dimension)
 
         Block, BlockSeries, ConvDonsample, Pool, InputNorm = \
             self.import_building_blocks(params.framework.mode)
@@ -23,17 +21,33 @@ class Encoder(torch.nn.Module):
         # How many filters did we start with?
         current_number_of_filters = params.encoder.n_initial_filters
         if params.framework.mode == DataMode.sparse:
-            self.input_layer = scn.InputLayer(
-                dimension    = 3,
-                spatial_size = torch.tensor(image_size)
-            )
-            self.initial_convolution = scn.SubmanifoldConvolution(
-                dimension   = 3,
-                nIn         = 1,
-                nOut        = params.encoder.n_initial_filters,
-                filter_size = [1,5,5],
-                bias        = params.encoder.bias
-            )
+
+            if dimension == 2:
+                self.input_layer = scn.InputLayer(
+                    dimension    = 3,
+                    spatial_size = torch.tensor(image_size)
+                )
+                self.initial_convolution = scn.SubmanifoldConvolution(
+                    dimension   = 3,
+                    nIn         = 1,
+                    nOut        = params.encoder.n_initial_filters,
+                    filter_size = [1,5,5],
+                    bias        = params.encoder.bias
+                )
+            else:
+                # Padding the 3D data to make things a little easier
+                # image_size3d = (1024, 512, 1280)
+                self.input_layer = scn.InputLayer(
+                    dimension    = 3,
+                    spatial_size = torch.tensor(image_size[1:])
+                )
+                self.initial_convolution = scn.SubmanifoldConvolution(
+                    dimension   = 3,
+                    nIn         = 1,
+                    nOut        = params.encoder.n_initial_filters,
+                    filter_size = [5,5,5],
+                    bias        = params.encoder.bias
+                )   
 
         else:
             self.input_layer = torch.nn.Identity()
@@ -100,8 +114,9 @@ class Encoder(torch.nn.Module):
         final_shape = [i // 2**params.encoder.depth for i in image_size]
         if dimension == 2:
             final_shape[0] = 3
+        else:
+            final_shape = final_shape[1:]
         self.output_shape = [params.encoder.n_output_filters,] +  final_shape
-        print(self.output_shape)
 
         # We apply a global pooling layer to the image, to produce the encoding:
         if params.framework.mode == DataMode.sparse:
@@ -125,9 +140,7 @@ class Encoder(torch.nn.Module):
 
     def forward(self, x):
 
-
         x = self.input_layer(x)
-       
         x = self.initial_convolution(x)
         
         for i, l in enumerate(self.network_layers):
