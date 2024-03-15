@@ -1,0 +1,9 @@
+defaults:
+  - supervised_classification
+  - override data: dune3d
+  - _self_
+
+data:
+  active:
+   - train
+   - val
