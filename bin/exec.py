@@ -65,7 +65,9 @@ class SparseEventID(object):
         # self.datasets, self.transforms = self.configure_datasets()
         logger.info("Data pipeline ready.")
 
-
+    def exit(self):
+        if hasattr(self, "trainer"):
+            self.trainer.exit()
 
     def run(self):
         if self.args.mode.name == ModeKind.train:
@@ -137,12 +139,16 @@ class SparseEventID(object):
             batch_keys.append("energy")
 
         elif self.args.name == "supervised_eventID":
-            batch_keys.append("label")
+            batch_keys.append("labelneutID")
+            batch_keys.append("labelprotID")
+            batch_keys.append("labelcpiID")
+            batch_keys.append("labelnpiID")
         elif self.args.name == "unsupervised_eventID":
             batch_keys.append("energy")
             batch_keys.append("label")
 
         ds = {}
+        print(self.args.data.active)
         for active in self.args.data.active:
 
             f_name = getattr(self.args.data, active)
@@ -164,7 +170,7 @@ class SparseEventID(object):
                 )
             })
             # Get the image size:
-            spatial_size = larcv_ds.image_size(self.args.data.image_key)
+            # spatial_size = larcv_ds.image_size(self.args.data.image_key)
 
         return ds
         #
@@ -184,7 +190,6 @@ class SparseEventID(object):
         logger = logging.getLogger("SpEvID")
 
         logger.info("Running Training")
-        logger.info(self.__str__())
 
         self.make_trainer()
 
@@ -337,7 +342,7 @@ class SparseEventID(object):
 
 from src.config import config
 
-@hydra.main(version_base=None, config_path="../recipes", config_name="dune2d")
+@hydra.main(version_base=None, config_path="../recipes")
 def main(cfg : OmegaConf) -> None:
 
     s = SparseEventID(cfg)

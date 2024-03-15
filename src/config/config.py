@@ -48,7 +48,7 @@ cs.store(
 defaults = [
     {"run"       : "base_run"},
     {"mode"      : "train"},
-    {"dataset"   : "dune2d"},
+    {"data"      : "dune2d"},
     {"framework" : "lightning"},
     {"encoder"   : "convnet"}
 ]
@@ -90,7 +90,7 @@ class SupervisedClassification:
 
     run:        Run       = MISSING
     mode:       Mode      = MISSING
-    dataset:    Data      = MISSING
+    data:       Data      = MISSING
     framework:  Framework = MISSING
     encoder:    Repr      = MISSING
     head:       MLP       = field(default_factory= lambda : MLP())
@@ -106,7 +106,7 @@ class SupervisedClassification:
 #     )
 #     network:    network.Network     = MISSING
 #     framework:  framework.Framework = MISSING
-#     dataset:    dataset.Dataset     = MISSING
+#     data:    data.Dataset     = MISSING
 
 
 # cs.store(name="config",                    node=Config)

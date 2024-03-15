@@ -29,11 +29,14 @@ class TorchLarcvDataset(data.IterableDataset):
             if i < len(self.ds):
                 yield batch
 
-    def image_size(self, key):
-        return self.ds.image_size(key)
+    def image_size(self):
+        return self.ds.image_size()
 
-    def image_meta(self, key):
-        return self.ds.image_meta(key)
+    def n_images(self):
+        return self.ds.n_images()
+
+    def image_meta(self):
+        return self.ds.image_meta()
 
     def __len__(self):
         return int(len(self.ds) / self.global_batch_size)

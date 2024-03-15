@@ -1,7 +1,6 @@
 defaults:
-  - _self_
   - supervised_classification
-
+  - _self_
 
 data:
   active:

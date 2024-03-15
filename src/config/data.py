@@ -16,6 +16,10 @@ class AccessMode(Enum):
     random_blocks = 1
     random_events = 2
 
+class Detector(Enum):
+    dune2d = 0
+    dune3d = 1
+
 @dataclass
 class Data:
     name:        str = ""
@@ -33,6 +37,7 @@ class Data:
     transform2: bool = False
     dimension:   int = 3
     images:      int = 1
+    mc:         bool = True
 
 
 
@@ -54,6 +59,8 @@ class dune2d(Data):
     val:            str        = "/data/datasets/DUNE/pixsim_small/test.h5"
     dimension:      int        = 2
     images:         int        = 3
+    image_key:      str        = "dunevoxels"
+    detector:       Detector   = Detector.dune2d
 
 # @dataclass
 # class dune3d(Dataset):
@@ -61,6 +68,8 @@ class dune2d(Data):
 #     file:           str        = "test.h5"
 #     aux_file:       str        = "test.h5"
 #     dimension:      int        = 3
+#     detector:       Detector   = Detector.dune3d
+    
 
 # @dataclass
 # class next_new(Dataset):
@@ -71,6 +80,6 @@ class dune2d(Data):
 
 
 cs = ConfigStore.instance()
-cs.store(group="dataset", name="dune2d",   node=dune2d)
+cs.store(group="data", name="dune2d",   node=dune2d)
 # cs.store(group="dataset", name="dune3d",   node=dune3d)
 # cs.store(group="dataset", name="next_new", node=next_new)

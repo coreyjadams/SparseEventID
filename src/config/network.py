@@ -22,7 +22,7 @@ class Norm(Enum):
 
 @dataclass
 class Repr:
-    depth:             int   = 3
+    depth:             int   = 5
     n_initial_filters: int   = 32
     n_output_filters:  int   = 128
 
